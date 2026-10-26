@@ -1,0 +1,19 @@
+# build output
+build/
+dist/
+wheelhouse/
+_skbuild/
+*.so
+*.pyd
+*.dylib
+
+# R environment from tests/install_r_env.py
+.r-env/
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+env/

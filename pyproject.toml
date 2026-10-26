@@ -1,0 +1,99 @@
+[project]
+authors = [
+  {name = "Matthew Andres Moreno", email="m.more500@gmail.com"},
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Natural Language :: English",
+  "Programming Language :: C++",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+# end-user requirements
+dependencies = [
+  "numpy>=1.22",
+]
+description = "Python bindings for the C++ core of the castor R package for phylogenetics, without R."
+license = {text = "GPL-3.0-or-later"}
+name  =  "castorbind"
+keywords = [
+  "castor",
+  "castorbind",
+  "phylogenetics",
+]
+requires-python = ">=3.10"
+# castor version, plus a post-release number for castorbind's own changes
+version = "1.8.7.post1"
+
+[project.readme]
+file = "README.md"
+content-type = "text/markdown"
+
+[project.urls]
+homepage = "https://github.com/mmore500/castorbind"
+repository = "https://github.com/mmore500/castorbind"
+
+# adapted from https://pybind11.readthedocs.io/en/stable/compiling.html
+[build-system]
+build-backend = "scikit_build_core.build"
+requires = [
+  "scikit-build-core>=0.10",
+  "pybind11>=2.13",
+]
+
+# additional dev requriements
+[project.optional-dependencies]
+testing = [
+  "black==22.10.0",
+  "isort>=5.12.0",
+  "pytest-xdist>=3.6.1",
+  "pytest==8.3.3",
+  "ruff>=0.1.11",
+]
+release = [
+  "build>=1.2.0",
+  "cibuildwheel==2.23.3",
+  "twine>=5.0.0",
+]
+
+[tool.scikit-build]
+minimum-version = "0.10"
+cmake.build-type = "Release"
+wheel.packages = ["python/castorbind"]
+sdist.exclude = [
+  "vendor/castor/inst",
+  "vendor/castor/man",
+]
+
+[tool.cibuildwheel]
+build-verbosity = 1
+test-requires = ["pytest"]
+test-command = "pytest {project}/tests"
+# castor includes sys/time.h, which MSVC lacks; see README
+skip = ["*-win*", "*-manylinux_i686", "*-musllinux_i686", "pp*"]
+
+[tool.black]
+line_length = 79
+extend_exclude = "vendor|_core\\.pyi"
+
+[tool.isort]
+force_sort_within_sections = true
+line_length = 79
+profile = "black"
+skip_gitignore = true
+extend_skip = ["vendor"]
+
+[tool.ruff]
+line-length = 79
+extend-exclude = ["vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E402", "E501", "E702", "F403"]

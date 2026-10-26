@@ -1,0 +1,3 @@
+[submodule "vendor/castor"]
+	path = vendor/castor
+	url = https://github.com/cran/castor
