@@ -15,6 +15,9 @@
 [
 ![GitHub stars](https://img.shields.io/github/stars/mmore500/castorbind.svg?style=round-square&logo=github&label=Stars&logoColor=white)](https://github.com/mmore500/castorbind)
 
+> [!WARNING]
+> castorbind is experimental. It may produce incorrect results, and its interface is subject to change.
+
 Python bindings for the C++ core of [castor](https://cran.r-project.org/package=castor), the R package for efficient phylogenetics on large trees (tree simulation, ancestral state reconstruction, and fitting models of trait evolution and diversification), with no R needed at build time or at runtime.
 
 - Free software: GPL-2.0-or-later
