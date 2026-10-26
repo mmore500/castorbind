@@ -10,6 +10,6 @@ from ._core import _castor_version as castor_version
 
 __author__ = "Matthew Andres Moreno"
 __email__ = "m.more500@gmail.com"
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = ["castor_version", "legacy"]

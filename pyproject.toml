@@ -29,7 +29,7 @@ keywords = [
   "phylogenetics",
 ]
 requires-python = ">=3.10"
-version = "0.1.0"
+version = "0.2.0"
 
 [project.readme]
 file = "README.md"
@@ -64,7 +64,7 @@ release = [
 ]
 
 [tool.bumpver]
-current_version = "v0.1.0"
+current_version = "v0.2.0"
 version_pattern = "vMAJOR.MINOR.PATCH"
 commit = true
 tag = true
