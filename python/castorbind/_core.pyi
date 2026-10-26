@@ -1,0 +1,13 @@
+# Private compiled module; its public functions are typed in
+# legacy/__init__.pyi.
+import typing
+
+import numpy as np
+
+_bit_generator: np.random.MT19937
+_castor_version: str
+
+def _with_castor_lock(f: typing.Callable[[], typing.Any]) -> typing.Any: ...
+def _runif(n: int) -> list[float]: ...
+def _rexp(n: int) -> list[float]: ...
+def _rbinom(n: int, size: float, prob: float) -> list[float]: ...
