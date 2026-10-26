@@ -61,7 +61,10 @@ def test_integer_rejects_non_ints(value):
 
 
 def test_integer_accepts_numpy_int():
-    assert cb.get_distances_from_root(**dict(TREE, Ntips=np.int64(3)))
+    np.testing.assert_equal(
+        cb.get_distances_from_root(**dict(TREE, Ntips=np.int64(3))),
+        cb.get_distances_from_root(**TREE),
+    )
 
 
 def test_narrow_integer_out_of_range():
@@ -91,7 +94,9 @@ def test_integer_matrix_rejects_non_integral():
     with pytest.raises(TypeError, match="A"):
         cb.find_non_zeros_int(1, 2, np.array([[0.5, 1.9]]))
     result = cb.find_non_zeros_int(1, 2, np.array([[0.0, 2.0]]))
-    assert result == {"rows": [0], "columns": [1], "values": [2]}
+    np.testing.assert_equal(
+        result, {"rows": [0], "columns": [1], "values": [2]}
+    )
 
 
 def test_list_argument_rejects_str():
@@ -121,7 +126,7 @@ def test_set_rng_state_rejects_bad_position(mti):
 
 def test_matrix_result_layout():
     result = cb.find_non_zeros_float(2, 3, np.arange(6.0).reshape(2, 3))
-    assert result["values"] == [1.0, 2.0, 3.0, 4.0, 5.0]
+    np.testing.assert_equal(result["values"], [1.0, 2.0, 3.0, 4.0, 5.0])
     distances = distance_matrix(focal_clades=[0, 1, 2, 3])
     assert distances.flags.c_contiguous
     assert distances[0, 3] == 2.0 and distances[3, 0] == 2.0
@@ -155,7 +160,7 @@ def test_list_of_numpy_arrays():
         dense_rows=[np.array([0, 2]), np.array([1, 3])],
         Rindexing=False,
     )
-    assert actual == expected
+    np.testing.assert_equal(actual, expected)
     assert cb.dense_binary_matrix_row2column_major(
         NR=2,
         NC=4,

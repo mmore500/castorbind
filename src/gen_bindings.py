@@ -55,16 +55,16 @@ NATIVE_ARG_TYPES = {
 # C++ return type -> python stub type
 RETURN_STUB_TYPES = {
     "Rcpp::List": "dict[str, typing.Any]",
-    "NumericVector": "list[float]",
-    "IntegerVector": "list[int]",
+    "NumericVector": "np.ndarray",
+    "IntegerVector": "np.ndarray",
     "NumericMatrix": "np.ndarray",
     "bool": "bool",
     "long": "int",
     "double": "float",
     "std::string": "str",
-    "std::vector<double>": "list[float]",
-    "std::vector<long>": "list[int]",
-    "std::vector<std::vector<long> >": "list[list[int]]",
+    "std::vector<double>": "np.ndarray",
+    "std::vector<long>": "np.ndarray",
+    "std::vector<std::vector<long> >": "list[np.ndarray]",
 }
 
 # R literal default -> (C++ expression, python stub expression)

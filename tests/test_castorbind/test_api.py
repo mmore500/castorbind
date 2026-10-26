@@ -4,6 +4,7 @@ import re
 import subprocess
 import sys
 
+import numpy as np
 import pytest
 
 import castorbind
@@ -51,11 +52,15 @@ def test_top_level_namespace():
 
 def test_default_arguments():
     result = legacy.find_non_zeros_float(2, 2, [[0.0, 1.0], [0.0, 0.0]])
-    assert result == {"rows": [0], "columns": [1], "values": [1.0]}
+    np.testing.assert_equal(
+        result, {"rows": [0], "columns": [1], "values": [1.0]}
+    )
     result = legacy.find_non_zeros_float(
         2, 2, [[0.0, 1.0], [0.0, 0.0]], transpose=True
     )
-    assert result == {"rows": [1], "columns": [0], "values": [1.0]}
+    np.testing.assert_equal(
+        result, {"rows": [1], "columns": [0], "values": [1.0]}
+    )
 
 
 def test_docstrings():

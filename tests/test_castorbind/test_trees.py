@@ -40,7 +40,7 @@ def test_distances_from_root():
         tree_edge=tree["tree_edge"],
         edge_length=tree["edge_lengths"],
     )
-    assert depths[: tree["Ntips"]] == [2.0, 2.0, 2.0]
+    np.testing.assert_equal(depths[: tree["Ntips"]], [2.0, 2.0, 2.0])
     assert depths[tree["root"]] == 0.0
 
 
@@ -86,3 +86,25 @@ def test_matrix_result():
     np.testing.assert_array_equal(np.diag(distances), 0.0)
     np.testing.assert_array_equal(distances, distances.T)
     assert sorted(distances[0]) == [0.0, 4.0, 4.0]
+
+
+def test_result_types():
+    tree = read()
+    assert tree["tree_edge"].dtype == np.int64
+    assert tree["edge_lengths"].dtype == np.float64
+    assert tree["tip_names"] == ["c", "b", "a"]  # strings stay lists
+    depths = cb.get_distances_from_root(
+        Ntips=tree["Ntips"],
+        Nnodes=tree["Nnodes"],
+        Nedges=tree["Nedges"],
+        tree_edge=tree["tree_edge"],
+        edge_length=tree["edge_lengths"],
+    )
+    assert isinstance(depths, np.ndarray) and depths.dtype == np.float64
+    # a vector of vectors is a list of arrays
+    members = cb.get_member_lists_from_group_assignments(
+        Ngroups=2, pool2group=[0, 1, 0]
+    )
+    (lists,) = [v for v in members.values() if isinstance(v, list)]
+    assert all(isinstance(x, np.ndarray) for x in lists)
+    np.testing.assert_equal(lists, [[0, 2], [1]])

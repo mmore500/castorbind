@@ -41,52 +41,6 @@ extern "C" double unif_rand(void) {
   return x;
 }
 
-// casters for the shim's own result types; with pybind11/stl.h, these let
-// py::cast convert a whole Rcpp::castorbind_detail::Value
-namespace pybind11::detail {
-
-template <> struct type_caster<Rcpp::castorbind_detail::MatrixValue> {
-  PYBIND11_TYPE_CASTER(Rcpp::castorbind_detail::MatrixValue,
-                       const_name("numpy.ndarray"));
-  bool load(handle, bool) { return false; }
-  static handle cast(const Rcpp::castorbind_detail::MatrixValue &m,
-                     return_value_policy, handle) {
-    // column-major data -> C-contiguous (nrow, ncol) array
-    array_t<double> result(
-        {pybind11::ssize_t(m.nrow), pybind11::ssize_t(m.ncol)});
-    auto view = result.mutable_unchecked<2>();
-    for (long c = 0; c < m.ncol; ++c)
-      for (long r = 0; r < m.nrow; ++r) view(r, c) = m.data[r + c * m.nrow];
-    return result.release();
-  }
-};
-
-// R list -> dict, or list if it has no names
-template <> struct type_caster<std::shared_ptr<const Rcpp::List>> {
-  PYBIND11_TYPE_CASTER(std::shared_ptr<const Rcpp::List>,
-                       const_name("dict | list"));
-  bool load(handle, bool) { return false; }
-  static handle cast(const std::shared_ptr<const Rcpp::List> &list,
-                     return_value_policy, handle) {
-    const auto &names = list->names();
-    if (std::all_of(names.begin(), names.end(),
-                    [](const std::string &name) { return name.empty(); })) {
-      pybind11::list result;
-      for (std::size_t i = 0; i < list->size(); ++i)
-        result.append(pybind11::cast((*list)[i].value));
-      return result.release();
-    }
-    pybind11::dict result;
-    for (std::size_t i = 0; i < list->size(); ++i) {
-      object key = names[i].empty() ? object(int_(i)) : object(str(names[i]));
-      result[key] = pybind11::cast((*list)[i].value);
-    }
-    return result.release();
-  }
-};
-
-} // namespace pybind11::detail
-
 namespace castorbind::_impl {
 
 using Rcpp::castorbind_detail::Value;
@@ -129,6 +83,55 @@ void _check_integral(const py::array &a, const char *name) {
 }
 
 Value _value_from_py(py::handle h);
+
+// castor result -> python: numeric and logical vectors and matrices become
+// numpy arrays, lists become dicts (or lists, if unnamed)
+py::object _to_py(const Value &v) {
+  return std::visit(
+      [](const auto &x) -> py::object {
+        using X = std::decay_t<decltype(x)>;
+        using Rcpp::castorbind_detail::is_std_vector;
+        if constexpr (std::is_same_v<X, std::vector<bool>>) {
+          py::array_t<bool> result(py::ssize_t(x.size()));
+          auto view = result.mutable_unchecked<1>();
+          for (std::size_t i = 0; i < x.size(); ++i) view(i) = x[i];
+          return std::move(result);
+        } else if constexpr (is_std_vector<X>::value) {
+          if constexpr (std::is_arithmetic_v<typename X::value_type>)
+            return py::array_t<typename X::value_type>(x.size(), x.data());
+          else
+            return py::cast(x); // strings
+        } else if constexpr (std::is_same_v<X, Rcpp::castorbind_detail::
+                                                   MatrixValue>) {
+          // column-major data -> C-contiguous (nrow, ncol) array
+          py::array_t<double> result({py::ssize_t(x.nrow), py::ssize_t(x.ncol)});
+          auto view = result.mutable_unchecked<2>();
+          for (long c = 0; c < x.ncol; ++c)
+            for (long r = 0; r < x.nrow; ++r) view(r, c) = x.data[r + c * x.nrow];
+          return std::move(result);
+        } else if constexpr (std::is_same_v<X,
+                                            std::shared_ptr<const Rcpp::List>>) {
+          const auto &names = x->names();
+          if (std::all_of(names.begin(), names.end(),
+                          [](const std::string &n) { return n.empty(); })) {
+            py::list result;
+            for (std::size_t i = 0; i < x->size(); ++i)
+              result.append(_to_py((*x)[i].value));
+            return std::move(result);
+          }
+          py::dict result;
+          for (std::size_t i = 0; i < x->size(); ++i) {
+            py::object key = names[i].empty() ? py::object(py::int_(i))
+                                              : py::object(py::str(names[i]));
+            result[key] = _to_py((*x)[i].value);
+          }
+          return std::move(result);
+        } else {
+          return py::cast(x); // None, scalars, strings
+        }
+      },
+      v);
+}
 
 Rcpp::List _list_from_py(py::handle h) {
   Rcpp::List result;
@@ -249,7 +252,7 @@ std::unique_lock<std::mutex> lock_castor() {
   return lock;
 }
 
-py::object to_py(const Rcpp::RObject &x) { return py::cast(x.value); }
+py::object to_py(const Rcpp::RObject &x) { return _to_py(x.value); }
 
 template <> std::vector<double> from_py(py::handle h, const char *name) {
   return _array_to_vector<double>(h, name);

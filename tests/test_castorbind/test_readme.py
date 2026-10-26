@@ -1,6 +1,7 @@
 import pathlib
 import re
 
+import numpy as np
 import pytest
 
 README = pathlib.Path(__file__).resolve().parents[2] / "README.md"
@@ -13,4 +14,4 @@ def test_readme_usage_example():
     namespace = {}
     exec(example, namespace)
     assert namespace["r"]["success"]
-    assert namespace["depths"][:3] == [2.0, 2.0, 2.0]
+    np.testing.assert_equal(namespace["depths"][:3], [2.0, 2.0, 2.0])

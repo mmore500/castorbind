@@ -55,7 +55,7 @@ depths = cb.get_distances_from_root(
 
 - Trees are counts plus a row-major, 0-based `tree_edge` array of length 2 × Nedges (a `(Nedges, 2)` array also works). Tips are 0 to Ntips−1 and internal nodes follow.
 - Results are dicts with castor's own keys (`success`, `error`, ...); failures are reported through `success=False`, not raised.
-- Arrays go in as numpy arrays or lists. Vectors come back as lists and matrices as 2-D numpy arrays.
+- Arrays go in as numpy arrays or lists, and come back as numpy arrays (matrices as 2-D arrays); strings come back as lists of `str`.
 
 ## Installation
 
