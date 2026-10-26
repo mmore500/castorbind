@@ -39,7 +39,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-14]
+        # conda-forge has no r-castor builds for ARM
+        os: [ubuntu-24.04]
     steps:
     - uses: actions/checkout@v4
       with:

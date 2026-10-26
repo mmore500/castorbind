@@ -79,6 +79,11 @@ test-command = "pytest {project}/tests"
 # castor includes sys/time.h, which MSVC lacks; see README
 skip = ["*-win*", "*-manylinux_i686", "*-musllinux_i686", "pp*"]
 
+# numpy only publishes wheels for manylinux_2_28 and newer
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+
 [tool.black]
 line_length = 79
 extend_exclude = "vendor|_core\\.pyi"
