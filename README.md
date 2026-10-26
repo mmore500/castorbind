@@ -39,10 +39,6 @@ depths = cb.get_distances_from_root(
     tree_edge=r["tree_edge"],
     edge_length=r["edge_lengths"],
 )
-
-cb.set_seed(42)  # same stream as set.seed(42) in R
-state = cb.get_rng_state()  # 625 ints, laid out like .Random.seed[-1]
-cb.set_rng_state(state)
 ```
 
 Conventions follow castor's C++:
