@@ -125,16 +125,17 @@ Rcpp::List _list_from_py(py::handle h) {
 }
 
 // a list element -> what R would have passed for it. castor's list
-// arguments hold numbers, numeric vectors and nested lists; nothing else
+// arguments hold numbers, numeric vectors and nested lists, so nothing else
 // (e.g., strings or complex numbers) is supported
 Value _value_from_py(py::handle h) {
   if (h.is_none()) return std::monostate{};
   if (py::isinstance<py::dict>(h))
     return std::make_shared<const Rcpp::List>(_list_from_py(h));
   if (py::isinstance<py::list>(h) || py::isinstance<py::tuple>(h)) {
+    // any non-scalar item (list, dict, numpy array, ...) makes this a list
     for (auto item : py::reinterpret_borrow<py::sequence>(h))
-      if (py::isinstance<py::dict>(item) || py::isinstance<py::list>(item) ||
-          py::isinstance<py::tuple>(item))
+      if (py::isinstance<py::dict>(item) ||
+          (py::isinstance<py::sequence>(item) && !py::isinstance<py::str>(item)))
         return std::make_shared<const Rcpp::List>(_list_from_py(h));
   }
   constexpr const char *name = "list element";
@@ -151,13 +152,16 @@ Value _value_from_py(py::handle h) {
   case 'f':
     if (scalar) return h.cast<double>();
     return _array_to_vector<double>(a, name);
-  default:
+  case 'c':
     PyErr_SetString(PyExc_NotImplementedError,
-                    ("castorbind: list elements of type " +
-                     std::string(py::str(py::type::handle_of(h))) +
-                     " are not supported")
-                        .c_str());
+                    "castorbind: complex numbers in list arguments are not "
+                    "supported");
     throw py::error_already_set();
+  default:
+    throw py::type_error("castorbind: cannot pass " +
+                         std::string(py::repr(h)).substr(0, 80) +
+                         " to castor; list elements must be numbers, numeric "
+                         "arrays, or nested lists or dicts");
   }
 }
 
@@ -269,6 +273,9 @@ Rcpp::List list_from_py(py::handle h, const char *name) {
 }
 
 void init_module(py::module_ &m) {
+  py::register_local_exception<Rcpp::castorbind_detail::missing_name>(
+      m, "MissingNameError", PyExc_KeyError);
+
   _main_thread = py::module_::import("threading")
                      .attr("main_thread")()
                      .attr("ident")
@@ -284,7 +291,7 @@ void init_module(py::module_ &m) {
           throw py::value_error("seed -2**31 is R's NA, not a valid seed");
         _locked([=] { castorbind_set_seed(seed); });
       },
-      py::arg("seed"),
+      py::arg("seed").noconvert(),  // no floats etc.
       "Seed R's Mersenne-Twister RNG, giving the same stream as "
       "set.seed(seed) in R.");
 
@@ -317,7 +324,7 @@ void init_module(py::module_ &m) {
         if (_locked([&] { return castorbind_set_rng_state(state.data()); }))
           throw py::value_error("invalid RNG state: all zero");
       },
-      py::arg("state"),
+      py::arg("state").noconvert(),
       "Restore an RNG state returned by get_rng_state(), or taken from "
       ".Random.seed[-1] in R.");
 

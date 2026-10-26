@@ -63,7 +63,7 @@ def test_docstrings():
 
 
 def test_bad_argument_type():
-    with pytest.raises(TypeError, match="Ntips"):
+    with pytest.raises(TypeError, match="incompatible function arguments"):
         legacy.get_distances_from_root(
             Ntips="three",
             Nnodes=2,

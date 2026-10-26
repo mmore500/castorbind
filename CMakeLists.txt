@@ -60,7 +60,7 @@ set(CORE_CPP ${CMAKE_CURRENT_BINARY_DIR}/_core.cpp)
 add_custom_command(
   OUTPUT ${CORE_CPP}
   COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/src/gen_bindings.py
-    --castor ${CASTOR_DIR} --cpp-out ${CORE_CPP} --pyi-out ${CMAKE_CURRENT_BINARY_DIR}/_core.pyi
+    --castor ${CASTOR_DIR} --cpp-out ${CORE_CPP}
   DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gen_bindings.py
     ${CASTOR_DIR}/src/RcppExports.cpp

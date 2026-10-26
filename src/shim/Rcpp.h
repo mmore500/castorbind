@@ -56,6 +56,11 @@ template <> struct storage<REALSXP> { using type = double; };
 template <> struct storage<CPLXSXP> { using type = Rcomplex; };
 template <> struct storage<STRSXP> { using type = std::string; };
 
+// a named list element is missing (a KeyError in Python)
+struct missing_name : std::out_of_range {
+  using std::out_of_range::out_of_range;
+};
+
 // column-major, like R
 struct MatrixValue {
   long nrow = 0;
@@ -220,8 +225,8 @@ public:
   const RObject &operator[](const std::string &name) const {
     for (std::size_t i = 0; i < names_.size(); ++i)
       if (names_[i] == name) return values_[i];
-    throw std::out_of_range("castorbind: no list element named '" + name +
-                            "'");
+    throw castorbind_detail::missing_name("castorbind: no list element named '" +
+                                          name + "'");
   }
   const RObject &operator[](const char *name) const {
     return (*this)[std::string(name)];

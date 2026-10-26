@@ -6,7 +6,7 @@ wraps.
 """
 
 from . import legacy
-from ._core import castor_version
+from .legacy import castor_version
 
 __author__ = "Matthew Andres Moreno"
 __email__ = "m.more500@gmail.com"

@@ -35,9 +35,9 @@ ARG_STUB_TYPES = {
     "ComplexVector": "ArrayLike",
     "NumericMatrix": "ArrayLike",
     "IntegerMatrix": "ArrayLike",
-    "StringVector": "typing.Sequence[str]",
-    "std::vector<std::string>": "typing.Sequence[str]",
-    "Rcpp::List": "typing.Mapping[str, typing.Any] | typing.Sequence[typing.Any]",
+    "StringVector": "list[str] | tuple[str, ...]",
+    "std::vector<std::string>": "list[str] | tuple[str, ...]",
+    "Rcpp::List": "dict[str, typing.Any] | list[typing.Any] | tuple[typing.Any, ...]",
 }
 
 # C++ argument type (minus const/&) -> type the binding takes, letting
@@ -234,8 +234,9 @@ def generate_cpp(exports: typing.List[Export], castor_version: str) -> str:
         py_args = []
         for param in export.params:
             py_arg = f'py::arg("{param.py_name}")'
-            if param.base_type == "bool":
-                py_arg += ".noconvert()"  # no None, ints, etc.
+            if param.base_type in ("bool", "int", "long"):
+                # no None or numbers for bools; no floats etc. for ints
+                py_arg += ".noconvert()"
             if param.default is not None:
                 cpp_default, _ = translate_default(param.default)
                 py_arg += f" = {cpp_default}"
@@ -263,7 +264,7 @@ def generate_pyi(exports: typing.List[Export], castor_version: str) -> str:
         "",
         "def set_seed(seed: int) -> None: ...",
         "def get_rng_state() -> list[int]: ...",
-        "def set_rng_state(state: typing.Sequence[int]) -> None: ...",
+        "def set_rng_state(state: list[int] | tuple[int, ...]) -> None: ...",
     ]
     for export in exports:
         params = []
@@ -300,12 +301,15 @@ def main() -> int:
     parser.add_argument(
         "--pyi-out",
         type=pathlib.Path,
-        default=HERE.parent / "python/castorbind/legacy/__init__.pyi",
+        help="defaults to python/castorbind/legacy/__init__.pyi, unless "
+        "--cpp-out is given",
     )
     parser.add_argument(
         "--check", action="store_true", help="fail if outputs are stale"
     )
     args = parser.parse_args()
+    if args.cpp_out is None and args.pyi_out is None:
+        args.pyi_out = HERE.parent / "python/castorbind/legacy/__init__.pyi"
 
     exports = load_exports(args.castor)
     castor_version = read_castor_version(args.castor)
