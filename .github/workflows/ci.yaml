@@ -72,8 +72,8 @@ jobs:
         python-version: "3.10"
     - name: Check generated stubs are up to date
       run: python3 src/gen_bindings.py --check
-    - name: Check vendored castor is unmodified
-      run: git -C vendor/castor diff --exit-code
+    - name: Check vendored sources are unmodified
+      run: git submodule foreach git diff --exit-code
     - name: Check formatting
       run: |
         python3 -m pip install "black==22.10.0" "isort>=5.12.0" "ruff>=0.1.11"

@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include <pybind11/iostream.h>
 #include <pybind11/pybind11.h>
 
 #include <Rcpp.h>
@@ -19,10 +20,9 @@ namespace py = pybind11;
 // the Python exception stays set and is re-raised once the GIL is back
 struct Interrupted {};
 
-// castor and R's RNG keep global state, so calls into them are serialized
+// castor and R's RNG keep global state, so calls into them are serialized;
+// never wait for this while holding the GIL
 std::mutex &castor_mutex();
-
-void flush_rcout();
 
 py::object to_py(const Rcpp::RObject &x);
 
@@ -75,20 +75,19 @@ template <class T> T from_py(py::handle h, const char *name) {
 
 // run a castor function without the GIL, then convert its result
 template <class F> py::object call(F &&f) {
+  std::unique_lock<std::mutex> lock(castor_mutex(), std::defer_lock);
+  {
+    py::gil_scoped_release release;
+    lock.lock();
+  }
+  py::scoped_ostream_redirect redirect(Rcpp::Rcout);
   Rcpp::RObject result;
-  bool interrupted = false;
   try {
     py::gil_scoped_release release;
-    std::lock_guard<std::mutex> lock(castor_mutex());
     result = Rcpp::wrap(f());
   } catch (const Interrupted &) {
-    interrupted = true;
-  } catch (...) {
-    flush_rcout();
-    throw;
+    throw py::error_already_set();
   }
-  flush_rcout();
-  if (interrupted) throw py::error_already_set();
   return to_py(result);
 }
 

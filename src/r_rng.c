@@ -1,6 +1,6 @@
 /*
  *  R's default uniform random number generator, for use with standalone
- *  nmath (vendor/rmath) in place of nmath/standalone/sunif.c.
+ *  nmath (vendor/r-source/src/nmath) in place of nmath/standalone/sunif.c.
  *
  *  Copied, with the other RNG kinds removed, from R 4.5.3 src/main/RNG.c:
  *

@@ -67,6 +67,10 @@ def to_r_literal(value: typing.Any) -> str:
     if isinstance(value, dict):
         items = (f"{k}={to_r_literal(v)}" for k, v in value.items())
         return f"list({', '.join(items)})"
+    if isinstance(value, (list, tuple)) and any(
+        isinstance(v, (list, tuple, np.ndarray)) for v in value
+    ):
+        return f"list({', '.join(to_r_literal(v) for v in value)})"
     values = list(np.asarray(value).ravel())
     if not values:
         return "numeric()"

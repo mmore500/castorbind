@@ -1,24 +1,33 @@
 # castorbind
 
 [
+![PyPI](https://img.shields.io/pypi/v/castorbind.svg)
+](https://pypi.python.org/pypi/castorbind)
+[
+![Python versions](https://img.shields.io/pypi/pyversions/castorbind.svg)
+](https://pypi.python.org/pypi/castorbind)
+[
 ![CI](https://github.com/mmore500/castorbind/actions/workflows/ci.yaml/badge.svg)
 ](https://github.com/mmore500/castorbind/actions)
+[
+![License](https://img.shields.io/github/license/mmore500/castorbind.svg)
+](https://github.com/mmore500/castorbind/blob/master/LICENSE)
+[
+![GitHub stars](https://img.shields.io/github/stars/mmore500/castorbind.svg?style=round-square&logo=github&label=Stars&logoColor=white)](https://github.com/mmore500/castorbind)
 
-Python bindings for the C++ core of [castor](https://cran.r-project.org/package=castor), the R package for phylogenetics (Louca & Doebeli 2017), with no R needed at build time or at runtime.
+Python bindings for the C++ core of [castor](https://cran.r-project.org/package=castor), the R package for efficient phylogenetics on large trees (tree simulation, ancestral state reconstruction, and fitting models of trait evolution and diversification), with no R needed at build time or at runtime.
 
-- Free software: GPL-3.0-or-later (castor and R's math library are GPL-2.0-or-later)
+- Free software: GPL-2.0-or-later
 - Repository: <https://github.com/mmore500/castorbind>
 
-castorbind is not an official port; castor is by Stilianos Louca.
+castor is by Stilianos Louca, and full credit for it is due to its original author.
+castorbind is not an official port.
 
-## What's included
+castorbind wraps every C++ function castor exports, under its castor name minus the `_CPP` suffix, taking castor's own flat, 0-based inputs and returning dicts.
+R's random number generator is included, so outputs match castor in R bit for bit, including seeded simulations: `set_seed(n)` gives the same random stream as `set.seed(n)` in R.
+castor's R-level functions are not included.
 
-- Every C++ function castor exports (174 in castor 1.8.7), under its castor name minus the `_CPP` suffix, taking castor's own flat, 0-based inputs and returning dicts.
-- R's own random number generator, so `set_seed(n)` before a castor simulator gives the same stream as `set.seed(n)` in R.
-- Generated type stubs, so the raw API is discoverable in editors.
-
-Deliberately left out: ports of castor's R-level functions (`fit_musse`, `simulate_musse`, ...), tree classes and conversions, and R-identical `runif`/`sample()` for Python code.
-These can live in downstream packages built on these bindings.
+castorbind is versioned independently of castor; `castorbind.castor_version` gives the version of castor it wraps.
 
 ## Usage
 
@@ -41,20 +50,9 @@ depths = cb.get_distances_from_root(
 )
 ```
 
-Conventions follow castor's C++:
-
 - Trees are counts plus a row-major, 0-based `tree_edge` array of length 2 × Nedges (a `(Nedges, 2)` array also works). Tips are 0 to Ntips−1 and internal nodes follow.
 - Results are dicts with castor's own keys (`success`, `error`, ...); failures are reported through `success=False`, not raised.
 - Arrays go in as numpy arrays or lists. Vectors come back as lists and matrices as 2-D numpy arrays.
-
-`castorbind.castor_version` gives the castor version bound; castorbind's own version is castor's plus a post-release number (e.g., `1.8.7.post1`).
-
-### Reproducibility against R
-
-The C++ and the random stream are both R's, so outputs match R bit for bit; the test suite checks this against genuine R.
-"Matches R" holds for R's default `RNGkind()` (Mersenne-Twister, Inversion, Rejection).
-As in R, the RNG state is one global: calls into castor are serialized, but concurrent Python threads drawing random numbers will interleave draws.
-castor runs without holding the GIL.
 
 ## Installation
 
@@ -69,61 +67,30 @@ git clone --recursive https://github.com/mmore500/castorbind
 python3 -m pip install ./castorbind
 ```
 
-Windows is not yet supported (castor includes `sys/time.h`, which MSVC lacks).
+## AI Use
 
-## How it works
-
-castor's C++ is compiled unmodified by swapping R's headers for small stand-ins, and linking R's own math library in place of R.
-
-```
-castorbind/
-├── pyproject.toml                  # scikit-build-core; cibuildwheel config
-├── CMakeLists.txt
-├── vendor/castor/                  # cran/castor git submodule, unmodified
-├── vendor/rmath/                   # R's standalone math library (src/nmath), unmodified
-├── src/shim/Rcpp.h                 # stand-in for the parts of Rcpp castor uses
-├── src/rmath_config/               # config headers for building nmath standalone
-├── src/r_rng.c                     # R's Mersenne-Twister + set.seed()
-├── src/castorbind.cpp              # Python conversions, GIL, stdout, interrupts
-├── src/gen_bindings.py             # emits the binding module at build time
-├── python/castorbind/__init__.py   # re-exports _core
-├── python/castorbind/_core.pyi     # generated stubs
-└── tests/                          # including comparisons against genuine R
-```
-
-- **Rcpp stand-in:** covers the Rcpp castor actually uses. Results are held in plain C++ and converted to Python once per call, so castor runs with the GIL released. R lists become dicts, `NumericMatrix` becomes a 2-D numpy array, `Rcout` goes to `sys.stdout`, and interrupt checks raise pending Python signals (e.g., Ctrl-C).
-- **R math library:** all 120 files of R's `src/nmath` build standalone as a static library, with two small config headers and `Rmath.h` generated by CMake.
-- **R's RNG:** `src/r_rng.c` is copied from R's `RNG.c`: Mersenne-Twister, `set.seed()` seeding, and state get/set in `.Random.seed` layout.
-- **Binding generator:** bindings are generated from the prototypes Rcpp writes into castor's `RcppExports.cpp`, with default values from `R/RcppExports.R`.
-
-## Development
-
-```bash
-git submodule update --init
-python3 -m pip install -e ".[testing]"
-python3 -m pytest tests
-```
-
-Tests compare castorbind with genuine R and castor, run on the fly.
-They are skipped unless R with castor is available; to set it up,
-
-```bash
-python3 -m pip install "py-rattler==0.28.0"
-python3 tests/install_r_env.py .r-env
-export CASTORBIND_RSCRIPT=.r-env/bin/Rscript
-```
-
-After a change to castor's exports, regenerate the stubs with `python3 src/gen_bindings.py`.
-
-### Upgrading castor
-
-1. `git -C vendor/castor checkout <new CRAN tag>`
-2. `python3 src/gen_bindings.py` to regenerate stubs (the build regenerates the bindings)
-3. Update the castor version in `pyproject.toml`, `python/castorbind/__init__.py`, `tests/install_r_env.py`, and tests.
-4. Run the tests against the matching R castor.
+Substantial portions of castorbind were prepared using agentic coding tools.
 
 ## Citing
 
 If castorbind is useful in your research, please cite castor:
 
 > Louca, S., & Doebeli, M. (2017). Efficient comparative phylogenetics on large trees. Bioinformatics, 34(6), 1053–1055. <https://doi.org/10.1093/bioinformatics/btx701>
+
+```bibtex
+@article{louca2017efficient,
+  title = {Efficient comparative phylogenetics on large trees},
+  volume = {34},
+  ISSN = {1367-4811},
+  url = {http://dx.doi.org/10.1093/bioinformatics/btx701},
+  DOI = {10.1093/bioinformatics/btx701},
+  number = {6},
+  journal = {Bioinformatics},
+  publisher = {Oxford University Press (OUP)},
+  author = {Louca, Stilianos and Doebeli, Michael},
+  editor = {Valencia, Alfonso},
+  year = {2017},
+  month = oct,
+  pages = {1053--1055}
+}
+```

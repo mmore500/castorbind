@@ -20,13 +20,18 @@ def castor_exports():
 
 
 def test_castor_version():
-    assert castorbind.castor_version == "1.8.7"
-    assert castorbind.__version__.startswith(castorbind.castor_version)
+    description = CASTOR / "DESCRIPTION"
+    if not description.exists():
+        pytest.skip("vendor/castor not checked out")
+    (version,) = re.findall(
+        r"^Version:\s*(\S+)$", description.read_text(), re.M
+    )
+    assert castorbind.castor_version == version
 
 
 def test_every_export_is_bound():
     exports = castor_exports()
-    assert len(exports) == 174
+    assert exports
     for name in exports:
         assert callable(getattr(castorbind, name)), name
         assert name in castorbind.__all__
@@ -70,3 +75,22 @@ def test_type_stubs_up_to_date():
         text=True,
     )
     assert completed.returncode == 0, completed.stderr
+
+
+def test_castor_output_goes_to_sys_stdout(tmp_path, capsys):
+    path = tmp_path / "distances.tsv"
+    path.write_text("a\tb\t1.5\na\tc\t2.5\n")
+    result = castorbind.read_distances_list(
+        file_path=str(path),
+        delimiter="\t",
+        comment_prefix="#",
+        header=False,
+        distances_column=2,
+        min_distance=-1.0,
+        max_distance=10.0,
+        max_Nedges=-1,
+        verbose_interval=1,
+        verbose_prefix="castor: ",
+    )
+    assert result["success"], result
+    assert "castor: Read 2 lines so far" in capsys.readouterr().out

@@ -29,27 +29,28 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 set(CASTOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/castor)
-set(RMATH_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/rmath)
-if(NOT EXISTS ${CASTOR_DIR}/src/RcppExports.cpp)
+set(RSOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vendor/r-source)
+if(NOT EXISTS ${CASTOR_DIR}/src/RcppExports.cpp
+   OR NOT EXISTS ${RSOURCE_DIR}/src/nmath/nmath.h)
   message(FATAL_ERROR
-    "vendor/castor is empty; run `git submodule update --init`")
+    "vendor/ submodules are empty; run `git submodule update --init`")
 endif()
 
 # R's standalone math library, as a static library so only the routines
 # castor calls end up in the wheel
-file(STRINGS ${RMATH_DIR}/VERSION PACKAGE_VERSION LIMIT_COUNT 1)
+file(STRINGS ${RSOURCE_DIR}/VERSION PACKAGE_VERSION LIMIT_COUNT 1)
 set(RMATH_HAVE_WORKING_LOG1P "# define HAVE_WORKING_LOG1P 1")
 configure_file(
-  ${RMATH_DIR}/src/include/Rmath.h0.in
+  ${RSOURCE_DIR}/src/include/Rmath.h0.in
   ${CMAKE_CURRENT_BINARY_DIR}/rmath/Rmath.h @ONLY)
-file(GLOB NMATH_SOURCES ${RMATH_DIR}/src/nmath/*.c)
+file(GLOB NMATH_SOURCES ${RSOURCE_DIR}/src/nmath/*.c)
 add_library(rmath STATIC ${NMATH_SOURCES})
 target_compile_definitions(rmath PRIVATE MATHLIB_STANDALONE HAVE_CONFIG_H)
 target_include_directories(rmath PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src/rmath_config
   ${CMAKE_CURRENT_BINARY_DIR}/rmath
-  ${RMATH_DIR}/src/include
-  ${RMATH_DIR}/src/nmath)
+  ${RSOURCE_DIR}/src/include
+  ${RSOURCE_DIR}/src/nmath)
 if(NOT MSVC)
   target_compile_options(rmath PRIVATE -w)  # vendored, unmodified
 endif()

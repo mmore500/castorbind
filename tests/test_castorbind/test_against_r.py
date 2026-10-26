@@ -123,3 +123,15 @@ def test_simulate_markov_model(r):
         include_nodes=True,
         Nsimulations=5,
     )
+
+
+def test_list_argument(r):
+    # a ragged list of int vectors, passed as an R list
+    check(
+        r,
+        "dense_binary_matrix_row2column_major",
+        NR=3,
+        NC=4,
+        dense_rows=[[0, 2], [1], [0, 1, 3]],
+        Rindexing=False,
+    )

@@ -5,7 +5,7 @@ authors = [
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)",
   "Natural Language :: English",
   "Programming Language :: C++",
   "Programming Language :: Python :: 3",
@@ -20,8 +20,8 @@ classifiers = [
 dependencies = [
   "numpy>=1.22",
 ]
-description = "Python bindings for the C++ core of the castor R package for phylogenetics, without R."
-license = {text = "GPL-3.0-or-later"}
+description = "Python bindings for the C++ core of castor, the R package for efficient phylogenetics on large trees, without R."
+license = {text = "GPL-2.0-or-later"}
 name  =  "castorbind"
 keywords = [
   "castor",
@@ -29,8 +29,7 @@ keywords = [
   "phylogenetics",
 ]
 requires-python = ">=3.10"
-# castor version, plus a post-release number for castorbind's own changes
-version = "1.8.7.post1"
+version = "0.1.0"
 
 [project.readme]
 file = "README.md"
@@ -59,8 +58,24 @@ testing = [
 ]
 release = [
   "build>=1.2.0",
+  "bumpver==2022.1120",
   "cibuildwheel==2.23.3",
   "twine>=5.0.0",
+]
+
+[tool.bumpver]
+current_version = "v0.1.0"
+version_pattern = "vMAJOR.MINOR.PATCH"
+commit = true
+tag = true
+
+[tool.bumpver.file_patterns]
+"pyproject.toml" = [
+  'current_version = "{version}"',
+  'version = "{pep440_version}"',
+]
+"python/castorbind/__init__.py" = [
+  '__version__ = "{pep440_version}"',
 ]
 
 [tool.scikit-build]
@@ -70,6 +85,19 @@ wheel.packages = ["python/castorbind"]
 sdist.exclude = [
   "vendor/castor/inst",
   "vendor/castor/man",
+  "vendor/r-source",
+]
+# only R's math library is needed from vendor/r-source
+sdist.include = [
+  "vendor/r-source/COPYING",
+  "vendor/r-source/VERSION",
+  "vendor/r-source/src/include/Rmath.h0.in",
+  "vendor/r-source/src/include/R_ext/Boolean.h",
+  "vendor/r-source/src/include/R_ext/Print.h",
+  "vendor/r-source/src/include/R_ext/RS.h",
+  "vendor/r-source/src/include/R_ext/Random.h",
+  "vendor/r-source/src/nmath/*.c",
+  "vendor/r-source/src/nmath/*.h",
 ]
 
 [tool.cibuildwheel]

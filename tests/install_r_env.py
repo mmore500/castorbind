@@ -13,18 +13,29 @@ Requires py-rattler (pip install "py-rattler==0.28.0").
 
 import asyncio
 import pathlib
+import re
 import sys
 
 import rattler
 
-# keep in sync with vendor/castor
-SPECS = ["r-base>=4.4", "r-castor==1.8.7"]
+DESCRIPTION = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "vendor"
+    / "castor"
+    / "DESCRIPTION"
+)
+
+
+def castor_version() -> str:
+    """Version of castor that castorbind wraps."""
+    match = re.search(r"^Version:\s*(\S+)$", DESCRIPTION.read_text(), re.M)
+    return match.group(1)
 
 
 async def install(prefix: pathlib.Path) -> None:
     records = await rattler.solve(
         ["conda-forge"],
-        specs=SPECS,
+        specs=["r-base>=4.4", f"r-castor=={castor_version()}"],
         virtual_packages=rattler.VirtualPackage.detect(),
     )
     await rattler.install(records, target_prefix=prefix)

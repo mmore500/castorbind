@@ -384,7 +384,7 @@ extern std::ostream Rcout;
 
 } // namespace Rcpp
 
-// R's standalone math library (vendor/rmath), linked in place of R
+// R's standalone math library (vendor/r-source/src/nmath), linked in place of R
 namespace castorbind_rmath {
 extern "C" {
 double runif(double a, double b);
