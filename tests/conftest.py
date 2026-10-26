@@ -18,35 +18,16 @@ import pytest
 
 import castorbind
 
-# serialize R values as JSON; doubles round-trip exactly via %.17g
+# serialize R values as JSON with jsonlite (a castor dependency): 17
+# significant digits round-trip doubles exactly, and NaN/NA and infinities
+# become the tokens python's json accepts
 R_PRELUDE = r"""
-suppressPackageStartupMessages(library(castor))
+suppressPackageStartupMessages({library(castor); library(jsonlite)})
 .tojson <- function(x) {
-  if (is.null(x)) return("null")
-  if (is.list(x)) {
-    items <- vapply(x, .tojson, "")
-    if (is.null(names(x))) return(paste0("[", paste(items, collapse=","), "]"))
-    keys <- paste0("\"", names(x), "\":")
-    return(paste0("{", paste0(keys, items, collapse=","), "}"))
-  }
-  if (is.matrix(x)) {
-    rows <- vapply(seq_len(nrow(x)), function(i) .tojson(x[i, ]), "")
-    return(paste0("[", paste(rows, collapse=","), "]"))
-  }
-  if (length(x) == 0) return("[]")
-  if (is.character(x)) {
-    vals <- paste0("\"", gsub("([\"\\\\])", "\\\\\\1", x), "\"")
-  } else if (is.logical(x)) {
-    vals <- ifelse(is.na(x), "NaN", ifelse(x, "true", "false"))
-  } else if (is.complex(x)) {
-    stop("complex results are not supported")
-  } else {
-    x <- as.numeric(x)
-    vals <- ifelse(is.nan(x) | is.na(x), "NaN",
-      ifelse(is.infinite(x), ifelse(x > 0, "Infinity", "-Infinity"),
-        sprintf("%.17g", x)))
-  }
-  paste0("[", paste(vals, collapse=","), "]")
+  json <- toJSON(x, digits = I(17), na = "string", null = "null")
+  json <- gsub('"(NaN|NA)"', "NaN", json)
+  json <- gsub('"-Inf"', "-Infinity", json)
+  gsub('"Inf"', "Infinity", json)
 }
 """
 

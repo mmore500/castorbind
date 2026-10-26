@@ -81,7 +81,6 @@ template <class T> struct is_std_vector : std::false_type {};
 template <class T, class A>
 struct is_std_vector<std::vector<T, A>> : std::true_type {};
 
-
 template <class T> inline constexpr bool always_false = false;
 
 // element-wise conversion of any numeric value to std::vector<E>
@@ -91,8 +90,6 @@ template <class E> std::vector<E> numeric_as(const Value &v) {
         using X = std::decay_t<decltype(x)>;
         if constexpr (std::is_arithmetic_v<X>) {
           return {static_cast<E>(x)};
-        } else if constexpr (std::is_same_v<X, MatrixValue>) {
-          return std::vector<E>(x.data.begin(), x.data.end());
         } else if constexpr (is_std_vector<X>::value) {
           if constexpr (std::is_arithmetic_v<typename X::value_type>)
             return std::vector<E>(x.begin(), x.end());
@@ -142,7 +139,6 @@ public:
   iterator end() { return data_.end(); }
   const_iterator begin() const { return data_.begin(); }
   const_iterator end() const { return data_.end(); }
-  void push_back(const stored_type &x) { data_.push_back(x); }
   const std::vector<stored_type> &std_vector() const { return data_; }
 
 private:
@@ -176,7 +172,6 @@ using IntegerVector = Vector<castorbind_detail::INTSXP>;
 using LogicalVector = Vector<castorbind_detail::LGLSXP>;
 using ComplexVector = Vector<castorbind_detail::CPLXSXP>;
 using StringVector = Vector<castorbind_detail::STRSXP>;
-using CharacterVector = StringVector;
 using NumericMatrix = Matrix<castorbind_detail::REALSXP>;
 using IntegerMatrix = Matrix<castorbind_detail::INTSXP>;
 

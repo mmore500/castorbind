@@ -22,49 +22,25 @@ namespace py = pybind11;
 struct Interrupted {};
 
 // castor and R's RNG keep global state, so calls into them are serialized;
-// never wait for this while holding the GIL
-std::mutex &castor_mutex();
+// this waits for the lock without holding the GIL
+std::unique_lock<std::mutex> lock_castor();
 
 py::object to_py(const Rcpp::RObject &x);
 
-std::vector<double> doubles_from_py(py::handle h, const char *name);
-std::vector<long> longs_from_py(py::handle h, const char *name);
-Rcpp::LogicalVector logicals_from_py(py::handle h, const char *name);
-Rcpp::ComplexVector complexes_from_py(py::handle h, const char *name);
-Rcpp::NumericMatrix numeric_matrix_from_py(py::handle h, const char *name);
-Rcpp::IntegerMatrix integer_matrix_from_py(py::handle h, const char *name);
-Rcpp::List list_from_py(py::handle h, const char *name);
-
 // convert a Python array or list argument to the C++ type a castor
 // function takes (pybind11 converts scalar and string arguments itself)
-template <class T> T from_py(py::handle h, const char *name) {
-  if constexpr (std::is_same_v<T, std::vector<double>>) {
-    return doubles_from_py(h, name);
-  } else if constexpr (std::is_same_v<T, std::vector<long>>) {
-    return longs_from_py(h, name);
-  } else if constexpr (std::is_same_v<T, Rcpp::LogicalVector>) {
-    return logicals_from_py(h, name);
-  } else if constexpr (std::is_same_v<T, Rcpp::ComplexVector>) {
-    return complexes_from_py(h, name);
-  } else if constexpr (std::is_same_v<T, Rcpp::NumericMatrix>) {
-    return numeric_matrix_from_py(h, name);
-  } else if constexpr (std::is_same_v<T, Rcpp::IntegerMatrix>) {
-    return integer_matrix_from_py(h, name);
-  } else if constexpr (std::is_same_v<T, Rcpp::List>) {
-    return list_from_py(h, name);
-  } else {
-    static_assert(Rcpp::castorbind_detail::always_false<T>,
-                  "castorbind: unsupported argument type");
-  }
-}
+template <class T> T from_py(py::handle h, const char *name);
+template <> std::vector<double> from_py(py::handle h, const char *name);
+template <> std::vector<long> from_py(py::handle h, const char *name);
+template <> Rcpp::LogicalVector from_py(py::handle h, const char *name);
+template <> Rcpp::ComplexVector from_py(py::handle h, const char *name);
+template <> Rcpp::NumericMatrix from_py(py::handle h, const char *name);
+template <> Rcpp::IntegerMatrix from_py(py::handle h, const char *name);
+template <> Rcpp::List from_py(py::handle h, const char *name);
 
 // run a castor function without the GIL, then convert its result
 template <class F> py::object call(F &&f) {
-  std::unique_lock<std::mutex> lock(castor_mutex(), std::defer_lock);
-  {
-    py::gil_scoped_release release;
-    lock.lock();
-  }
+  const auto lock = lock_castor();
   py::scoped_ostream_redirect redirect(Rcpp::Rcout);
   Rcpp::RObject result;
   try {

@@ -18,9 +18,9 @@ def test_rng_state_round_trip():
     legacy.set_seed(1)
     state = legacy.get_rng_state()
     assert len(state) == 625
-    first = _core._rnorm(10)
+    first = _core._runif(10)
     legacy.set_rng_state(state)
-    assert _core._rnorm(10) == first
+    assert _core._runif(10) == first
 
 
 @pytest.mark.parametrize(
@@ -53,7 +53,6 @@ def test_seeding_matches_r(r, seed):
     "draw, r_code",
     [
         (lambda: _core._runif(1000), "runif(1000)"),
-        (lambda: _core._rnorm(1000), "rnorm(1000)"),
         (lambda: _core._rexp(1000), "rexp(1000)"),
         (lambda: _core._rbinom(100, 10, 0.5), "rbinom(100, 10, 0.5)"),
         (lambda: _core._rbinom(100, 1000, 0.3), "rbinom(100, 1000, 0.3)"),

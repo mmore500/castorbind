@@ -13,7 +13,6 @@
 
 // R's standalone math library (vendor/r-source/src/nmath)
 extern "C" {
-double norm_rand(void);
 double exp_rand(void);
 double rbinom(double n, double p);
 }
@@ -206,20 +205,13 @@ _matrix_for<T> _matrix_from_py(py::handle h, const char *name) {
   return result;
 }
 
-// run f() with the castor mutex held and the GIL released
-template <class F> auto _locked(F &&f) {
-  py::gil_scoped_release release;
-  std::lock_guard<std::mutex> lock(castor_mutex());
-  return f();
-}
-
 template <class F> std::vector<double> _draw(long n, F &&f) {
   if (n < 0) throw py::value_error("n must be non-negative");
-  return _locked([&] {
-    std::vector<double> result(static_cast<std::size_t>(n));
-    for (auto &x : result) x = f();
-    return result;
-  });
+  std::vector<double> result(static_cast<std::size_t>(n));
+  const auto lock = lock_castor();
+  py::gil_scoped_release release;
+  for (auto &x : result) x = f();
+  return result;
 }
 
 } // namespace castorbind::_impl
@@ -247,44 +239,49 @@ namespace castorbind {
 
 using namespace _impl;
 
-std::mutex &castor_mutex() {
+std::unique_lock<std::mutex> lock_castor() {
   static std::mutex mutex;
-  return mutex;
+  std::unique_lock<std::mutex> lock(mutex, std::defer_lock);
+  // never wait while holding the GIL: the holder may need it (e.g., for
+  // checkUserInterrupt)
+  py::gil_scoped_release release;
+  lock.lock();
+  return lock;
 }
 
 py::object to_py(const Rcpp::RObject &x) { return py::cast(x.value); }
 
-std::vector<double> doubles_from_py(py::handle h, const char *name) {
+template <> std::vector<double> from_py(py::handle h, const char *name) {
   return _array_to_vector<double>(h, name);
 }
 
-std::vector<long> longs_from_py(py::handle h, const char *name) {
+template <> std::vector<long> from_py(py::handle h, const char *name) {
   if (h.is_none()) return {};
   py::array a = _as_array(h, name);
   _check_integral(a, name);
   return _array_to_vector<long long, long>(a, name);
 }
 
-Rcpp::LogicalVector logicals_from_py(py::handle h, const char *name) {
+template <> Rcpp::LogicalVector from_py(py::handle h, const char *name) {
   return Rcpp::LogicalVector(_array_to_vector<bool>(h, name));
 }
 
-Rcpp::ComplexVector complexes_from_py(py::handle h, const char *name) {
-  Rcpp::ComplexVector result;
+template <> Rcpp::ComplexVector from_py(py::handle h, const char *name) {
+  std::vector<Rcomplex> result;
   for (const auto &c : _array_to_vector<std::complex<double>>(h, name))
     result.push_back(Rcomplex{c.real(), c.imag()});
-  return result;
+  return Rcpp::ComplexVector(result);
 }
 
-Rcpp::NumericMatrix numeric_matrix_from_py(py::handle h, const char *name) {
+template <> Rcpp::NumericMatrix from_py(py::handle h, const char *name) {
   return _matrix_from_py<double>(h, name);
 }
 
-Rcpp::IntegerMatrix integer_matrix_from_py(py::handle h, const char *name) {
+template <> Rcpp::IntegerMatrix from_py(py::handle h, const char *name) {
   return _matrix_from_py<int>(h, name);
 }
 
-Rcpp::List list_from_py(py::handle h, const char *name) {
+template <> Rcpp::List from_py(py::handle h, const char *name) {
   if (h.is_none()) return {};
   if (!py::isinstance<py::dict>(h) && !py::isinstance<py::list>(h) &&
       !py::isinstance<py::tuple>(h))
@@ -312,11 +309,7 @@ void init_module(py::module_ &m) {
   m.def(
       "_with_castor_lock",
       [](py::function f) {
-        std::unique_lock<std::mutex> lock(castor_mutex(), std::defer_lock);
-        {
-          py::gil_scoped_release release;
-          lock.lock();
-        }
+        const auto lock = lock_castor();
         return f();
       },
       "Call f() while no castor function is running.");
@@ -325,9 +318,6 @@ void init_module(py::module_ &m) {
   m.def(
       "_runif", [](long n) { return _draw(n, unif_rand); }, py::arg("n"),
       "Same as runif(n) in R.");
-  m.def(
-      "_rnorm", [](long n) { return _draw(n, norm_rand); }, py::arg("n"),
-      "Same as rnorm(n) in R.");
   m.def(
       "_rexp", [](long n) { return _draw(n, exp_rand); }, py::arg("n"),
       "Same as rexp(n) in R.");

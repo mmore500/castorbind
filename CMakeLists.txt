@@ -43,11 +43,16 @@ set(RMATH_HAVE_WORKING_LOG1P "# define HAVE_WORKING_LOG1P 1")
 configure_file(
   ${RSOURCE_DIR}/src/include/Rmath.h0.in
   ${CMAKE_CURRENT_BINARY_DIR}/rmath/Rmath.h @ONLY)
+# nmath includes these; their contents are in the definitions below
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/rmath/Rconfig.h "")
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/rmath/config.h "")
 file(GLOB NMATH_SOURCES ${RSOURCE_DIR}/src/nmath/*.c)
 add_library(rmath STATIC ${NMATH_SOURCES})
-target_compile_definitions(rmath PRIVATE MATHLIB_STANDALONE HAVE_CONFIG_H)
+# what R's configure would put in config.h, for nmath
+target_compile_definitions(rmath PRIVATE
+  MATHLIB_STANDALONE IEEE_754 HAVE_EXPM1 HAVE_HYPOT HAVE_LOG1P
+  HAVE_WORKING_LOG1P HAVE_NEARBYINT HAVE_WORKING_ISFINITE HAVE_LONG_DOUBLE)
 target_include_directories(rmath PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/rmath_config
   ${CMAKE_CURRENT_BINARY_DIR}/rmath
   ${RSOURCE_DIR}/src/include
   ${RSOURCE_DIR}/src/nmath)
