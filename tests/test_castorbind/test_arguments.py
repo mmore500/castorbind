@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-import castorbind as cb
+from castorbind import legacy as cb
 
 TREE = {
     "Ntips": 3,
@@ -33,19 +33,21 @@ def test_bool_accepted(value):
     distance_matrix(verbose=value)
 
 
-@pytest.mark.parametrize("value", [math.inf, -math.inf, math.nan, 1e300, 2.5])
-def test_integer_rejects_bad_floats(value):
+@pytest.mark.parametrize(
+    "value", [math.inf, -math.inf, math.nan, 1e300, 2.5, 3.0, 2**70]
+)
+def test_integer_rejects_non_ints(value):
     with pytest.raises(TypeError, match="Ntips"):
         cb.get_distances_from_root(**dict(TREE, Ntips=value))
 
 
-def test_integer_accepts_integral_float():
-    assert cb.get_distances_from_root(**dict(TREE, Ntips=3.0))
+def test_integer_accepts_numpy_int():
+    assert cb.get_distances_from_root(**dict(TREE, Ntips=np.int64(3)))
 
 
 def test_narrow_integer_out_of_range():
     # quoting is an `int` in castor
-    with pytest.raises(ValueError, match="quoting"):
+    with pytest.raises(TypeError, match="quoting"):
         cb.tree_to_Newick_string(
             **TREE,
             tip_labels=["a", "b", "c"],

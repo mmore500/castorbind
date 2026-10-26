@@ -8,7 +8,7 @@ heavily commented source.
 
 Usage:
     python3 src/gen_bindings.py [--castor vendor/castor]
-        [--cpp-out _core.cpp] [--pyi-out python/castorbind/_core.pyi]
+        [--cpp-out _core.cpp] [--pyi-out python/castorbind/legacy/__init__.pyi]
         [--check]
 """
 
@@ -38,6 +38,18 @@ ARG_STUB_TYPES = {
     "StringVector": "typing.Sequence[str]",
     "std::vector<std::string>": "typing.Sequence[str]",
     "Rcpp::List": "typing.Mapping[str, typing.Any] | typing.Sequence[typing.Any]",
+}
+
+# C++ argument type (minus const/&) -> type the binding takes, letting
+# pybind11 convert it; other arguments go through castorbind::from_py
+NATIVE_ARG_TYPES = {
+    "bool": "bool",
+    "int": "int",
+    "long": "long",
+    "double": "double",
+    "std::string": "std::string",
+    "StringVector": "std::vector<std::string>",
+    "std::vector<std::string>": "std::vector<std::string>",
 }
 
 # C++ return type -> python stub type
@@ -150,12 +162,10 @@ def translate_default(r_literal: str) -> typing.Tuple[str, str]:
         return R_LITERALS[r_literal]
     if re.fullmatch(r"-?\d+L", r_literal):
         return r_literal[:-1] + "L", r_literal[:-1]
-    if re.fullmatch(r"-?\d+(\.\d*)?([eE]-?\d+)?", r_literal):
+    if re.fullmatch(r"-?\d+(\.\d*)?", r_literal):  # R numeric: a double
         value = repr(float(r_literal))
         return value, value
-    if re.fullmatch(r'"[^"\\]*"', r_literal):
-        return f"std::string({r_literal})", r_literal
-    raise ValueError(f"unsupported default value: {r_literal}")
+    raise NotImplementedError(f"unsupported default value: {r_literal}")
 
 
 def read_castor_version(castor: pathlib.Path) -> str:
@@ -202,10 +212,16 @@ def generate_cpp(exports: typing.List[Export], castor_version: str) -> str:
         "  castorbind::init_module(m);",
     ]
     for export in exports:
-        signature = ", ".join(f"py::object {p.py_name}" for p in export.params)
+        signature = ", ".join(
+            f"{NATIVE_ARG_TYPES.get(p.base_type, 'py::object')} {p.py_name}"
+            for p in export.params
+        )
         out.append(f'  m.def("{export.py_name}", []({signature}) {{')
         args = []
         for param in export.params:
+            if param.base_type in NATIVE_ARG_TYPES:
+                args.append(param.py_name)
+                continue
             out.append(
                 f"    auto a_{param.name} = castorbind::from_py<"
                 f'{param.base_type}>({param.py_name}, "{param.py_name}");'
@@ -218,6 +234,8 @@ def generate_cpp(exports: typing.List[Export], castor_version: str) -> str:
         py_args = []
         for param in export.params:
             py_arg = f'py::arg("{param.py_name}")'
+            if param.base_type == "bool":
+                py_arg += ".noconvert()"  # no None, ints, etc.
             if param.default is not None:
                 cpp_default, _ = translate_default(param.default)
                 py_arg += f" = {cpp_default}"
@@ -245,11 +263,7 @@ def generate_pyi(exports: typing.List[Export], castor_version: str) -> str:
         "",
         "def set_seed(seed: int) -> None: ...",
         "def get_rng_state() -> list[int]: ...",
-        "def set_rng_state(state: ArrayLike) -> None: ...",
-        "def _runif(n: int) -> list[float]: ...",
-        "def _rnorm(n: int) -> list[float]: ...",
-        "def _rexp(n: int) -> list[float]: ...",
-        "def _rbinom(n: int, size: float, prob: float) -> list[float]: ...",
+        "def set_rng_state(state: typing.Sequence[int]) -> None: ...",
     ]
     for export in exports:
         params = []
@@ -286,7 +300,7 @@ def main() -> int:
     parser.add_argument(
         "--pyi-out",
         type=pathlib.Path,
-        default=HERE.parent / "python/castorbind/_core.pyi",
+        default=HERE.parent / "python/castorbind/legacy/__init__.pyi",
     )
     parser.add_argument(
         "--check", action="store_true", help="fail if outputs are stale"

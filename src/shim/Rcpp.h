@@ -65,9 +65,9 @@ struct MatrixValue {
 
 // everything castor can hand back, after normalization by to_value()
 using Value = std::variant<
-    std::monostate, bool, long, double, std::string, std::complex<double>,
+    std::monostate, bool, long, double, std::string,
     std::vector<bool>, std::vector<long>, std::vector<double>,
-    std::vector<std::string>, std::vector<std::complex<double>>,
+    std::vector<std::string>,
     MatrixValue, std::shared_ptr<const List>>;
 
 template <class T> Value to_value(const T &x);
@@ -76,9 +76,6 @@ template <class T> struct is_std_vector : std::false_type {};
 template <class T, class A>
 struct is_std_vector<std::vector<T, A>> : std::true_type {};
 
-template <class T> struct is_std_complex : std::false_type {};
-template <class T>
-struct is_std_complex<std::complex<T>> : std::true_type {};
 
 template <class T> inline constexpr bool always_false = false;
 
@@ -129,14 +126,11 @@ public:
 
   Vector() = default;
   explicit Vector(std::size_t n) : data_(n) {}
-  Vector(std::size_t n, const stored_type &fill) : data_(n, fill) {}
-  Vector(std::initializer_list<stored_type> init) : data_(init) {}
   template <class U>
   Vector(const std::vector<U> &x) : data_(x.begin(), x.end()) {}
   Vector(const RObject &x);
 
   std::size_t size() const { return data_.size(); }
-  std::size_t length() const { return data_.size(); }
   stored_type &operator[](std::size_t i) { return data_[i]; }
   const stored_type &operator[](std::size_t i) const { return data_[i]; }
   iterator begin() { return data_.begin(); }
@@ -160,15 +154,10 @@ public:
 
   long nrow() const { return nrow_; }
   long ncol() const { return ncol_; }
-  long rows() const { return nrow_; }
-  long cols() const { return ncol_; }
-  std::size_t size() const { return data_.size(); }
   stored_type &operator()(long r, long c) { return data_[r + c * nrow_]; }
   const stored_type &operator()(long r, long c) const {
     return data_[r + c * nrow_];
   }
-  stored_type &operator[](std::size_t i) { return data_[i]; }
-  const stored_type &operator[](std::size_t i) const { return data_[i]; }
   const std::vector<stored_type> &column_major() const { return data_; }
 
 private:
@@ -207,7 +196,6 @@ private:
 class List {
 public:
   List() = default;
-  explicit List(std::size_t n) : values_(n), names_(n) {}
   List(const RObject &x);
   // Rcpp's implicit List(size); castor relies on it in `return NAN_D;`,
   // which R rejects as an invalid length
@@ -226,26 +214,14 @@ public:
   }
 
   std::size_t size() const { return values_.size(); }
-  std::size_t length() const { return values_.size(); }
   const std::vector<std::string> &names() const { return names_; }
 
-  RObject &operator[](std::size_t i) { return values_.at(i); }
   const RObject &operator[](std::size_t i) const { return values_.at(i); }
-  RObject &operator[](const std::string &name) {
-    for (std::size_t i = 0; i < names_.size(); ++i)
-      if (names_[i] == name) return values_[i];
-    values_.emplace_back();
-    names_.push_back(name);
-    return values_.back();
-  }
   const RObject &operator[](const std::string &name) const {
     for (std::size_t i = 0; i < names_.size(); ++i)
       if (names_[i] == name) return values_[i];
     throw std::out_of_range("castorbind: no list element named '" + name +
                             "'");
-  }
-  RObject &operator[](const char *name) {
-    return (*this)[std::string(name)];
   }
   const RObject &operator[](const char *name) const {
     return (*this)[std::string(name)];
@@ -288,10 +264,6 @@ template <class T> Value to_value(const T &x) {
     return static_cast<double>(x);
   } else if constexpr (std::is_convertible_v<T, std::string>) {
     return std::string(x);
-  } else if constexpr (is_std_complex<T>::value) {
-    return std::complex<double>(x);
-  } else if constexpr (std::is_same_v<T, Rcomplex>) {
-    return std::complex<double>(x.r, x.i);
   } else if constexpr (is_std_vector<T>::value) {
     using E = typename T::value_type;
     if constexpr (std::is_same_v<E, bool>) {
@@ -302,8 +274,6 @@ template <class T> Value to_value(const T &x) {
       return std::vector<double>(x.begin(), x.end());
     } else if constexpr (std::is_convertible_v<E, std::string>) {
       return std::vector<std::string>(x.begin(), x.end());
-    } else if constexpr (is_std_complex<E>::value) {
-      return std::vector<std::complex<double>>(x.begin(), x.end());
     } else {
       // e.g. vector<vector<long>>, which Rcpp wraps as an unnamed list
       List result;
@@ -312,10 +282,6 @@ template <class T> Value to_value(const T &x) {
     }
   } else if constexpr (std::is_same_v<T, LogicalVector>) {
     return std::vector<bool>(x.begin(), x.end());
-  } else if constexpr (std::is_same_v<T, ComplexVector>) {
-    std::vector<std::complex<double>> result;
-    for (const auto &c : x) result.emplace_back(c.r, c.i);
-    return result;
   } else if constexpr (std::is_same_v<T, NumericVector> ||
                        std::is_same_v<T, IntegerVector> ||
                        std::is_same_v<T, StringVector>) {
@@ -339,14 +305,6 @@ template <class T> T as(const RObject &x) {
     if (values.size() != 1)
       throw std::invalid_argument("castorbind: expected a scalar");
     return values[0];
-  } else if constexpr (std::is_same_v<T, std::string>) {
-    if (const auto *s = std::get_if<std::string>(&x.value)) return *s;
-    if (const auto *v = std::get_if<std::vector<std::string>>(&x.value))
-      if (v->size() == 1) return v->front();
-    throw std::invalid_argument("castorbind: expected a string");
-  } else if constexpr (std::is_same_v<T, std::vector<std::string>>) {
-    if (const auto *s = std::get_if<std::string>(&x.value)) return {*s};
-    return std::get<std::vector<std::string>>(x.value);
   } else if constexpr (std::is_same_v<T, List>) {
     return List(x);
   } else if constexpr (is_std_vector<T>::value) {
@@ -357,15 +315,9 @@ template <class T> T as(const RObject &x) {
 }
 
 template <int RTYPE> Vector<RTYPE>::Vector(const RObject &x) {
-  if constexpr (RTYPE == castorbind_detail::STRSXP) {
-    data_ = as<std::vector<std::string>>(x);
-  } else if constexpr (RTYPE == castorbind_detail::CPLXSXP) {
-    for (const auto &c :
-         std::get<std::vector<std::complex<double>>>(x.value))
-      data_.push_back(Rcomplex{c.real(), c.imag()});
-  } else {
-    data_ = castorbind_detail::numeric_as<stored_type>(x.value);
-  }
+  static_assert(std::is_arithmetic_v<stored_type>,
+                "castorbind Rcpp shim: only numeric vectors from RObject");
+  data_ = castorbind_detail::numeric_as<stored_type>(x.value);
 }
 
 inline List::List(const RObject &x) {

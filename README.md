@@ -23,7 +23,7 @@ Python bindings for the C++ core of [castor](https://cran.r-project.org/package=
 castor is by Stilianos Louca, and full credit for it is due to its original author.
 castorbind is not an official port.
 
-castorbind wraps every C++ function castor exports, under its castor name minus the `_CPP` suffix, taking castor's own flat, 0-based inputs and returning dicts.
+castorbind wraps every C++ function castor exports in `castorbind.legacy`, under its castor name minus the `_CPP` suffix, taking castor's own flat, 0-based inputs and returning dicts.
 R's random number generator is included, so outputs match castor in R bit for bit, including seeded simulations: `set_seed(n)` gives the same random stream as `set.seed(n)` in R.
 castor's R-level functions are not included.
 
@@ -32,7 +32,7 @@ castorbind is versioned independently of castor; `castorbind.castor_version` giv
 ## Usage
 
 ```python3
-import castorbind as cb
+from castorbind import legacy as cb
 
 r = cb.read_Newick_string(
     input="((a:1,b:1):1,c:2);",

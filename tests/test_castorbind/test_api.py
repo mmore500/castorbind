@@ -7,6 +7,7 @@ import sys
 import pytest
 
 import castorbind
+from castorbind import legacy
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CASTOR = ROOT / "vendor" / "castor"
@@ -33,32 +34,37 @@ def test_every_export_is_bound():
     exports = castor_exports()
     assert exports
     for name in exports:
-        assert callable(getattr(castorbind, name)), name
-        assert name in castorbind.__all__
+        assert callable(getattr(legacy, name)), name
+        assert name in legacy.__all__
 
 
 def test_rng_functions_exported():
     for name in "set_seed", "get_rng_state", "set_rng_state":
-        assert name in castorbind.__all__
+        assert name in legacy.__all__
+
+
+def test_top_level_namespace():
+    assert castorbind.__all__ == ["castor_version", "legacy"]
+    assert not any(name.startswith("_") for name in legacy.__all__)
 
 
 def test_default_arguments():
-    result = castorbind.find_non_zeros_float(2, 2, [[0.0, 1.0], [0.0, 0.0]])
+    result = legacy.find_non_zeros_float(2, 2, [[0.0, 1.0], [0.0, 0.0]])
     assert result == {"rows": [0], "columns": [1], "values": [1.0]}
-    result = castorbind.find_non_zeros_float(
+    result = legacy.find_non_zeros_float(
         2, 2, [[0.0, 1.0], [0.0, 0.0]], transpose=True
     )
     assert result == {"rows": [1], "columns": [0], "values": [1.0]}
 
 
 def test_docstrings():
-    doc = inspect.getdoc(castorbind.get_distances_from_root)
+    doc = inspect.getdoc(legacy.get_distances_from_root)
     assert "get_distances_from_root_CPP" in doc
 
 
 def test_bad_argument_type():
     with pytest.raises(TypeError, match="Ntips"):
-        castorbind.get_distances_from_root(
+        legacy.get_distances_from_root(
             Ntips="three",
             Nnodes=2,
             Nedges=4,
@@ -80,7 +86,7 @@ def test_type_stubs_up_to_date():
 def test_castor_output_goes_to_sys_stdout(tmp_path, capsys):
     path = tmp_path / "distances.tsv"
     path.write_text("a\tb\t1.5\na\tc\t2.5\n")
-    result = castorbind.read_distances_list(
+    result = legacy.read_distances_list(
         file_path=str(path),
         delimiter="\t",
         comment_prefix="#",
@@ -116,7 +122,7 @@ def test_signal_interrupts_castor():
     try:
         with pytest.raises(_Interrupt):
             # takes several seconds if not interrupted
-            castorbind.generate_random_tree(
+            legacy.generate_random_tree(
                 max_tips=50_000_000,
                 max_extant_tips=-1,
                 max_time=-1.0,

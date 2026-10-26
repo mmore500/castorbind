@@ -177,14 +177,14 @@ def check(
     ignore: typing.Sequence[str] = (),
     **kwargs,
 ) -> typing.Any:
-    """Call castorbind.<name> and castor:::<name>_CPP in R with the same
+    """Call castorbind.legacy.<name> and castor:::<name>_CPP in R with the same
     arguments (and seed), and require the same result.
 
     Keys in `ignore` (e.g., wall-clock runtimes) are not compared.
     """
     if seed is not None:
-        castorbind.set_seed(seed)
-    actual = getattr(castorbind, name)(**kwargs)
+        castorbind.legacy.set_seed(seed)
+    actual = getattr(castorbind.legacy, name)(**kwargs)
     expected = r.call_castor(name, seed=seed, **kwargs)
     if isinstance(actual, dict):
         actual = {k: v for k, v in actual.items() if k not in ignore}

@@ -5,7 +5,6 @@
 #include <climits>
 #include <cmath>
 #include <complex>
-#include <limits>
 #include <random>
 #include <variant>
 
@@ -125,23 +124,19 @@ Rcpp::List _list_from_py(py::handle h) {
   return result;
 }
 
-bool _is_nested(py::handle h) {
-  for (auto item : py::reinterpret_borrow<py::sequence>(h))
-    if (py::isinstance<py::dict>(item) ||
-        (!py::isinstance<py::str>(item) && py::isinstance<py::sequence>(item)))
-      return true;
-  return false;
-}
-
-// python value -> what R would have passed for it: an atomic vector or
-// scalar where numpy sees a homogeneous array, else a list
+// a list element -> what R would have passed for it. castor's list
+// arguments hold numbers, numeric vectors and nested lists; nothing else
+// (e.g., strings or complex numbers) is supported
 Value _value_from_py(py::handle h) {
   if (h.is_none()) return std::monostate{};
-  if (py::isinstance<py::str>(h)) return h.cast<std::string>();
-  if (py::isinstance<py::dict>(h) ||
-      ((py::isinstance<py::list>(h) || py::isinstance<py::tuple>(h)) &&
-       _is_nested(h)))
+  if (py::isinstance<py::dict>(h))
     return std::make_shared<const Rcpp::List>(_list_from_py(h));
+  if (py::isinstance<py::list>(h) || py::isinstance<py::tuple>(h)) {
+    for (auto item : py::reinterpret_borrow<py::sequence>(h))
+      if (py::isinstance<py::dict>(item) || py::isinstance<py::list>(item) ||
+          py::isinstance<py::tuple>(item))
+        return std::make_shared<const Rcpp::List>(_list_from_py(h));
+  }
   constexpr const char *name = "list element";
   py::array a = _as_array(h, name);
   const bool scalar = a.ndim() == 0;
@@ -156,13 +151,13 @@ Value _value_from_py(py::handle h) {
   case 'f':
     if (scalar) return h.cast<double>();
     return _array_to_vector<double>(a, name);
-  case 'c':
-    if (scalar) return h.cast<std::complex<double>>();
-    return _array_to_vector<std::complex<double>>(a, name);
-  case 'U': return h.cast<std::vector<std::string>>();
   default:
-    throw py::type_error("castorbind: cannot convert " +
-                         std::string(py::str(py::type::handle_of(h))) + " for castor");
+    PyErr_SetString(PyExc_NotImplementedError,
+                    ("castorbind: list elements of type " +
+                     std::string(py::str(py::type::handle_of(h))) +
+                     " are not supported")
+                        .c_str());
+    throw py::error_already_set();
   }
 }
 
@@ -187,15 +182,20 @@ _matrix_for<T> _matrix_from_py(py::handle h, const char *name) {
   return result;
 }
 
-template <class F> py::list _draw(long n, F &&f) {
+// run f() with the castor mutex held and the GIL released
+template <class F> auto _locked(F &&f) {
+  py::gil_scoped_release release;
+  std::lock_guard<std::mutex> lock(castor_mutex());
+  return f();
+}
+
+template <class F> std::vector<double> _draw(long n, F &&f) {
   if (n < 0) throw py::value_error("n must be non-negative");
-  std::vector<double> result;
-  {
-    py::gil_scoped_release release;
-    std::lock_guard<std::mutex> lock(castor_mutex());
-    for (long i = 0; i < n; ++i) result.push_back(f());
-  }
-  return py::cast(result);
+  return _locked([&] {
+    std::vector<double> result(static_cast<std::size_t>(n));
+    for (auto &x : result) x = f();
+    return result;
+  });
 }
 
 } // namespace castorbind::_impl
@@ -230,41 +230,6 @@ std::mutex &castor_mutex() {
 
 py::object to_py(const Rcpp::RObject &x) { return py::cast(x.value); }
 
-long long_from_py(py::handle h, const char *name) {
-  if (PyFloat_Check(h.ptr())) {
-    const double x = h.cast<double>();
-    if (!std::isfinite(x) || std::trunc(x) != x ||
-        x < double(std::numeric_limits<long>::min()) ||
-        x >= -double(std::numeric_limits<long>::min()))
-      _type_error(name, "an integer");
-    return long(x);
-  }
-  try {
-    return h.cast<long>();
-  } catch (const py::cast_error &) {
-    _type_error(name, "an integer");
-  }
-}
-
-double double_from_py(py::handle h, const char *name) {
-  try {
-    return h.cast<double>();
-  } catch (const py::cast_error &) {
-    _type_error(name, "a number");
-  }
-}
-
-bool bool_from_py(py::handle h, const char *name) {
-  py::detail::make_caster<bool> caster;
-  if (!caster.load(h, /*convert=*/false)) _type_error(name, "a bool");
-  return py::detail::cast_op<bool>(caster);
-}
-
-std::string string_from_py(py::handle h, const char *name) {
-  if (!py::isinstance<py::str>(h)) _type_error(name, "a str");
-  return h.cast<std::string>();
-}
-
 std::vector<double> doubles_from_py(py::handle h, const char *name) {
   return _array_to_vector<double>(h, name);
 }
@@ -287,16 +252,6 @@ Rcpp::ComplexVector complexes_from_py(py::handle h, const char *name) {
   return result;
 }
 
-Rcpp::StringVector strings_from_py(py::handle h, const char *name) {
-  if (h.is_none()) return {};
-  if (py::isinstance<py::str>(h)) return {h.cast<std::string>()};
-  try {
-    return Rcpp::StringVector(h.cast<std::vector<std::string>>());
-  } catch (const py::cast_error &) {
-    _type_error(name, "a sequence of str");
-  }
-}
-
 Rcpp::NumericMatrix numeric_matrix_from_py(py::handle h, const char *name) {
   return _matrix_from_py<double>(h, name);
 }
@@ -307,23 +262,13 @@ Rcpp::IntegerMatrix integer_matrix_from_py(py::handle h, const char *name) {
 
 Rcpp::List list_from_py(py::handle h, const char *name) {
   if (h.is_none()) return {};
-  if (py::isinstance<py::str>(h) ||
-      (!py::isinstance<py::dict>(h) && !py::isinstance<py::sequence>(h)))
-    _type_error(name, "a dict or sequence");
+  if (!py::isinstance<py::dict>(h) && !py::isinstance<py::list>(h) &&
+      !py::isinstance<py::tuple>(h))
+    _type_error(name, "a dict, list or tuple");
   return _list_from_py(h);
 }
 
 void init_module(py::module_ &m) {
-  py::register_local_exception_translator([](std::exception_ptr p) {
-    try {
-      if (p) std::rethrow_exception(p);
-    } catch (const std::invalid_argument &e) {
-      PyErr_SetString(PyExc_ValueError, e.what());
-    } catch (const std::out_of_range &e) {
-      PyErr_SetString(PyExc_KeyError, e.what());
-    }
-  });
-
   _main_thread = py::module_::import("threading")
                      .attr("main_thread")()
                      .attr("ident")
@@ -334,14 +279,10 @@ void init_module(py::module_ &m) {
 
   m.def(
       "set_seed",
-      [](py::handle seed) {
-        const long s = long_from_py(seed, "seed");
-        if (s <= INT_MIN || s > INT_MAX)
-          throw py::value_error("seed must be a 32-bit signed integer, "
-                                "excluding -2**31 (R's NA)");
-        py::gil_scoped_release release;
-        std::lock_guard<std::mutex> lock(castor_mutex());
-        castorbind_set_seed(int(s));
+      [](int seed) {
+        if (seed == INT_MIN)
+          throw py::value_error("seed -2**31 is R's NA, not a valid seed");
+        _locked([=] { castorbind_set_seed(seed); });
       },
       py::arg("seed"),
       "Seed R's Mersenne-Twister RNG, giving the same stream as "
@@ -350,39 +291,31 @@ void init_module(py::module_ &m) {
   m.def(
       "get_rng_state",
       [] {
-        std::vector<int> state(CASTORBIND_RNG_STATE_LEN);
-        {
-          py::gil_scoped_release release;
-          std::lock_guard<std::mutex> lock(castor_mutex());
+        return _locked([] {
+          std::vector<int> state(CASTORBIND_RNG_STATE_LEN);
           castorbind_get_rng_state(state.data());
-        }
-        return state;
+          return state;
+        });
       },
       "Return the RNG state as 625 ints, laid out like .Random.seed[-1] "
       "in R.");
 
   m.def(
       "set_rng_state",
-      [](py::handle state_) {
-        const std::vector<long> values = longs_from_py(state_, "state");
+      [](const std::vector<long long> &values) {
         if (values.size() != CASTORBIND_RNG_STATE_LEN)
           throw py::value_error("state must have 625 entries");
         // state[0] is mti, the position in the Mersenne-Twister state
         if (values[0] < 0 || values[0] > CASTORBIND_RNG_STATE_LEN)
           throw py::value_error("state[0] must be in [0, 625]");
         std::vector<int> state;
-        for (long x : values) {
-          if (x < INT_MIN || x > long(UINT_MAX))
+        for (long long x : values) {
+          if (x < INT_MIN || x > UINT_MAX)
             throw py::value_error("state entries must fit in 32 bits");
           state.push_back(int(static_cast<unsigned int>(x)));
         }
-        int status;
-        {
-          py::gil_scoped_release release;
-          std::lock_guard<std::mutex> lock(castor_mutex());
-          status = castorbind_set_rng_state(state.data());
-        }
-        if (status != 0) throw py::value_error("invalid RNG state: all zero");
+        if (_locked([&] { return castorbind_set_rng_state(state.data()); }))
+          throw py::value_error("invalid RNG state: all zero");
       },
       py::arg("state"),
       "Restore an RNG state returned by get_rng_state(), or taken from "

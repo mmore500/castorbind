@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-import castorbind as cb
+from castorbind import legacy as cb
 
 NEWICK = "((a:1,b:1):1,c:2);"
 

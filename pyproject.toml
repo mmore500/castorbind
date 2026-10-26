@@ -114,7 +114,7 @@ manylinux-aarch64-image = "manylinux_2_28"
 
 [tool.black]
 line_length = 79
-extend_exclude = "vendor|_core\\.pyi"
+extend_exclude = "vendor|legacy/__init__\\.pyi"
 
 [tool.isort]
 force_sort_within_sections = true
