@@ -1,9 +1,11 @@
 #include "castorbind.h"
 
 #include <algorithm>
+#include <chrono>
 #include <climits>
 #include <cmath>
 #include <complex>
+#include <limits>
 #include <random>
 #include <variant>
 
@@ -32,12 +34,12 @@ template <> struct type_caster<Rcpp::castorbind_detail::MatrixValue> {
   static handle cast(const Rcpp::castorbind_detail::MatrixValue &m,
                      return_value_policy, handle) {
     // column-major data -> C-contiguous (nrow, ncol) array
-    array_t<double, array::f_style> fortran(
-        {pybind11::ssize_t(m.nrow), pybind11::ssize_t(m.ncol)},
-        m.data.data());
-    return module_::import("numpy")
-        .attr("ascontiguousarray")(fortran)
-        .release();
+    array_t<double> result(
+        {pybind11::ssize_t(m.nrow), pybind11::ssize_t(m.ncol)});
+    auto view = result.mutable_unchecked<2>();
+    for (long c = 0; c < m.ncol; ++c)
+      for (long r = 0; r < m.nrow; ++r) view(r, c) = m.data[r + c * m.nrow];
+    return result.release();
   }
 };
 
@@ -71,15 +73,41 @@ namespace castorbind::_impl {
 
 using Rcpp::castorbind_detail::Value;
 
+// set by init_module
+unsigned long _main_thread = 0;
+
 [[noreturn]] void _type_error(const char *name, const char *expected) {
   throw py::type_error(std::string("argument '") + name + "': expected " +
                        expected);
 }
 
-template <class T> std::vector<T> _to_vector(py::handle h) {
+template <class T, class E = T>
+std::vector<E> _array_to_vector(py::handle h, const char *name) {
+  if (h.is_none()) return {};
   auto a = py::array_t<T, py::array::c_style | py::array::forcecast>::ensure(h);
-  if (!a) throw py::error_already_set();
-  return std::vector<T>(a.data(), a.data() + a.size());
+  if (!a) {
+    PyErr_Clear();
+    _type_error(name, "an array-like of numbers");
+  }
+  return std::vector<E>(a.data(), a.data() + a.size());
+}
+
+py::array _as_array(py::handle h, const char *name) {
+  py::array a = py::array::ensure(h);
+  if (!a) {
+    PyErr_Clear();
+    _type_error(name, "an array-like");
+  }
+  return a;
+}
+
+// R silently truncates doubles passed as integers; reject them instead
+void _check_integral(const py::array &a, const char *name) {
+  if (a.dtype().kind() != 'f') return;
+  for (double x : _array_to_vector<double>(a, name))
+    if (!std::isfinite(x) || std::trunc(x) != x || x < -0x1p63 ||
+        x >= 0x1p63)
+      _type_error(name, "integers");
 }
 
 Value _value_from_py(py::handle h);
@@ -99,7 +127,8 @@ Rcpp::List _list_from_py(py::handle h) {
 
 bool _is_nested(py::handle h) {
   for (auto item : py::reinterpret_borrow<py::sequence>(h))
-    if (!py::isinstance<py::str>(item) && py::isinstance<py::sequence>(item))
+    if (py::isinstance<py::dict>(item) ||
+        (!py::isinstance<py::str>(item) && py::isinstance<py::sequence>(item)))
       return true;
   return false;
 }
@@ -113,32 +142,28 @@ Value _value_from_py(py::handle h) {
       ((py::isinstance<py::list>(h) || py::isinstance<py::tuple>(h)) &&
        _is_nested(h)))
     return std::make_shared<const Rcpp::List>(_list_from_py(h));
-  py::array a = py::module_::import("numpy").attr("asarray")(h);
+  constexpr const char *name = "list element";
+  py::array a = _as_array(h, name);
   const bool scalar = a.ndim() == 0;
   switch (a.dtype().kind()) {
   case 'b':
-    return scalar ? Value(h.cast<bool>()) : Value(_to_vector<bool>(a));
+    if (scalar) return h.cast<bool>();
+    return _array_to_vector<bool>(a, name);
   case 'i':
   case 'u':
-    return scalar ? Value(h.cast<long>()) : Value(_to_vector<long>(a));
+    if (scalar) return h.cast<long>();
+    return _array_to_vector<long long, long>(a, name);
   case 'f':
-    return scalar ? Value(h.cast<double>()) : Value(_to_vector<double>(a));
+    if (scalar) return h.cast<double>();
+    return _array_to_vector<double>(a, name);
   case 'c':
     if (scalar) return h.cast<std::complex<double>>();
-    return _to_vector<std::complex<double>>(a);
+    return _array_to_vector<std::complex<double>>(a, name);
   case 'U': return h.cast<std::vector<std::string>>();
   default:
     throw py::type_error("castorbind: cannot convert " +
-                         std::string(py::str(h.get_type())) + " for castor");
+                         std::string(py::str(py::type::handle_of(h))) + " for castor");
   }
-}
-
-template <class T>
-std::vector<T> _array_to_vector(py::handle h, const char *name) {
-  if (h.is_none()) return {};
-  auto a = py::array_t<T, py::array::c_style | py::array::forcecast>::ensure(h);
-  if (!a) _type_error(name, "an array-like of numbers");
-  return std::vector<T>(a.data(), a.data() + a.size());
 }
 
 template <class T>
@@ -148,8 +173,12 @@ using _matrix_for = Rcpp::Matrix<std::is_same_v<T, double>
 
 template <class T>
 _matrix_for<T> _matrix_from_py(py::handle h, const char *name) {
+  if constexpr (std::is_integral_v<T>) _check_integral(_as_array(h, name), name);
   auto a = py::array_t<T, py::array::c_style | py::array::forcecast>::ensure(h);
-  if (!a || a.ndim() != 2) _type_error(name, "a 2-D array");
+  if (!a || a.ndim() != 2) {
+    PyErr_Clear();
+    _type_error(name, "a 2-D array");
+  }
   const long nrow = long(a.shape(0)), ncol = long(a.shape(1));
   _matrix_for<T> result(nrow, ncol);
   auto view = a.template unchecked<2>();
@@ -177,6 +206,13 @@ namespace Rcpp {
 std::ostream Rcout(nullptr);
 
 void checkUserInterrupt() {
+  // Python only runs signal handlers on the main thread, and taking the GIL
+  // can stall behind other threads, so check rarely and only there
+  if (PyThread_get_thread_ident() != castorbind::_impl::_main_thread) return;
+  const auto now = std::chrono::steady_clock::now();
+  static auto last_check = now;
+  if (now - last_check < std::chrono::milliseconds(100)) return;
+  last_check = now;
   pybind11::gil_scoped_acquire gil;
   if (PyErr_CheckSignals() != 0) throw castorbind::Interrupted();
 }
@@ -197,7 +233,10 @@ py::object to_py(const Rcpp::RObject &x) { return py::cast(x.value); }
 long long_from_py(py::handle h, const char *name) {
   if (PyFloat_Check(h.ptr())) {
     const double x = h.cast<double>();
-    if (std::trunc(x) != x) _type_error(name, "an integer");
+    if (!std::isfinite(x) || std::trunc(x) != x ||
+        x < double(std::numeric_limits<long>::min()) ||
+        x >= -double(std::numeric_limits<long>::min()))
+      _type_error(name, "an integer");
     return long(x);
   }
   try {
@@ -216,11 +255,9 @@ double double_from_py(py::handle h, const char *name) {
 }
 
 bool bool_from_py(py::handle h, const char *name) {
-  try {
-    return h.cast<bool>();
-  } catch (const py::cast_error &) {
-    _type_error(name, "a bool");
-  }
+  py::detail::make_caster<bool> caster;
+  if (!caster.load(h, /*convert=*/false)) _type_error(name, "a bool");
+  return py::detail::cast_op<bool>(caster);
 }
 
 std::string string_from_py(py::handle h, const char *name) {
@@ -234,15 +271,9 @@ std::vector<double> doubles_from_py(py::handle h, const char *name) {
 
 std::vector<long> longs_from_py(py::handle h, const char *name) {
   if (h.is_none()) return {};
-  py::array a = py::module_::import("numpy").attr("asarray")(h);
-  if (a.dtype().kind() == 'f') {
-    // R would silently truncate doubles; insist on integral values instead
-    for (double x : _array_to_vector<double>(a, name))
-      if (std::trunc(x) != x && !std::isnan(x))
-        _type_error(name, "an array-like of integers");
-  }
-  auto values = _array_to_vector<long long>(a, name);
-  return std::vector<long>(values.begin(), values.end());
+  py::array a = _as_array(h, name);
+  _check_integral(a, name);
+  return _array_to_vector<long long, long>(a, name);
 }
 
 Rcpp::LogicalVector logicals_from_py(py::handle h, const char *name) {
@@ -276,7 +307,8 @@ Rcpp::IntegerMatrix integer_matrix_from_py(py::handle h, const char *name) {
 
 Rcpp::List list_from_py(py::handle h, const char *name) {
   if (h.is_none()) return {};
-  if (!py::isinstance<py::dict>(h) && !py::isinstance<py::sequence>(h))
+  if (py::isinstance<py::str>(h) ||
+      (!py::isinstance<py::dict>(h) && !py::isinstance<py::sequence>(h)))
     _type_error(name, "a dict or sequence");
   return _list_from_py(h);
 }
@@ -291,6 +323,11 @@ void init_module(py::module_ &m) {
       PyErr_SetString(PyExc_KeyError, e.what());
     }
   });
+
+  _main_thread = py::module_::import("threading")
+                     .attr("main_thread")()
+                     .attr("ident")
+                     .cast<unsigned long>();
 
   // R seeds from the clock on first use; use the OS instead
   castorbind_set_seed(int(std::random_device{}()));
@@ -330,6 +367,9 @@ void init_module(py::module_ &m) {
         const std::vector<long> values = longs_from_py(state_, "state");
         if (values.size() != CASTORBIND_RNG_STATE_LEN)
           throw py::value_error("state must have 625 entries");
+        // state[0] is mti, the position in the Mersenne-Twister state
+        if (values[0] < 0 || values[0] > CASTORBIND_RNG_STATE_LEN)
+          throw py::value_error("state[0] must be in [0, 625]");
         std::vector<int> state;
         for (long x : values) {
           if (x < INT_MIN || x > long(UINT_MAX))

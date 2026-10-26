@@ -2,6 +2,7 @@
 // bindings (_core.cpp, written by src/gen_bindings.py).
 #pragma once
 
+#include <limits>
 #include <mutex>
 #include <string>
 #include <utility>
@@ -44,7 +45,11 @@ template <class T> T from_py(py::handle h, const char *name) {
   if constexpr (std::is_same_v<T, bool>) {
     return bool_from_py(h, name);
   } else if constexpr (std::is_integral_v<T>) {
-    return static_cast<T>(long_from_py(h, name));
+    const long x = long_from_py(h, name);
+    if (x < std::numeric_limits<T>::min() || x > std::numeric_limits<T>::max())
+      throw py::value_error(std::string("argument '") + name +
+                            "': out of range");
+    return static_cast<T>(x);
   } else if constexpr (std::is_floating_point_v<T>) {
     return double_from_py(h, name);
   } else if constexpr (std::is_same_v<T, std::string>) {

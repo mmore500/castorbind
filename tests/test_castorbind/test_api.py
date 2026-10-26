@@ -94,3 +94,51 @@ def test_castor_output_goes_to_sys_stdout(tmp_path, capsys):
     )
     assert result["success"], result
     assert "castor: Read 2 lines so far" in capsys.readouterr().out
+
+
+class _Interrupt(Exception):
+    pass
+
+
+@pytest.mark.skipif(
+    not hasattr(__import__("signal"), "setitimer"), reason="needs setitimer"
+)
+def test_signal_interrupts_castor():
+    import signal
+    import time
+
+    def handler(signum, frame):
+        raise _Interrupt
+
+    previous = signal.signal(signal.SIGALRM, handler)
+    signal.setitimer(signal.ITIMER_REAL, 0.2)
+    start = time.monotonic()
+    try:
+        with pytest.raises(_Interrupt):
+            # takes several seconds if not interrupted
+            castorbind.generate_random_tree(
+                max_tips=50_000_000,
+                max_extant_tips=-1,
+                max_time=-1.0,
+                max_time_since_equilibrium=-1.0,
+                birth_rate_intercept=1.0,
+                birth_rate_factor=0.0,
+                birth_rate_exponent=1.0,
+                death_rate_intercept=0.0,
+                death_rate_factor=0.0,
+                death_rate_exponent=1.0,
+                additional_rates_times=[],
+                additional_birth_rates_pc=[],
+                additional_death_rates_pc=[],
+                additional_periodic=False,
+                coalescent=False,
+                Nsplits=2,
+                as_generations=False,
+                no_full_extinction=True,
+                include_birth_times=False,
+                include_death_times=False,
+            )
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+    assert time.monotonic() - start < 5

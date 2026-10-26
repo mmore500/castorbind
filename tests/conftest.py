@@ -33,6 +33,7 @@ suppressPackageStartupMessages(library(castor))
     rows <- vapply(seq_len(nrow(x)), function(i) .tojson(x[i, ]), "")
     return(paste0("[", paste(rows, collapse=","), "]"))
   }
+  if (length(x) == 0) return("[]")
   if (is.character(x)) {
     vals <- paste0("\"", gsub("([\"\\\\])", "\\\\\\1", x), "\"")
   } else if (is.logical(x)) {
@@ -167,3 +168,26 @@ def assert_matches_r(actual: typing.Any, expected: typing.Any) -> None:
             np.asarray(actual, dtype=float),
             np.asarray(expected, dtype=float).reshape(np.shape(actual)),
         )
+
+
+def check(
+    r: RSession,
+    name: str,
+    seed: typing.Optional[int] = None,
+    ignore: typing.Sequence[str] = (),
+    **kwargs,
+) -> typing.Any:
+    """Call castorbind.<name> and castor:::<name>_CPP in R with the same
+    arguments (and seed), and require the same result.
+
+    Keys in `ignore` (e.g., wall-clock runtimes) are not compared.
+    """
+    if seed is not None:
+        castorbind.set_seed(seed)
+    actual = getattr(castorbind, name)(**kwargs)
+    expected = r.call_castor(name, seed=seed, **kwargs)
+    if isinstance(actual, dict):
+        actual = {k: v for k, v in actual.items() if k not in ignore}
+        expected = {k: v for k, v in expected.items() if k not in ignore}
+    assert_matches_r(actual, expected)
+    return actual

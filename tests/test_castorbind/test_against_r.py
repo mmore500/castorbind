@@ -2,9 +2,7 @@
 
 import pytest
 
-import castorbind as cb
-
-from ..conftest import assert_matches_r
+from ..conftest import check
 
 TREE = dict(
     Ntips=5,
@@ -14,14 +12,6 @@ TREE = dict(
     tree_edge=[5, 6, 6, 0, 6, 1, 5, 7, 7, 2, 7, 8, 8, 3, 8, 4],
     edge_length=[0.5, 1.0, 2.0, 2.0, 1.5, 1.0, 0.25, 0.75],
 )
-
-
-def check(r, name, seed=None, **kwargs):
-    if seed is not None:
-        cb.set_seed(seed)
-    actual = getattr(cb, name)(**kwargs)
-    assert_matches_r(actual, r.call_castor(name, seed=seed, **kwargs))
-    return actual
 
 
 def test_read_newick(r):

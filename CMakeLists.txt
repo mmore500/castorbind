@@ -85,4 +85,10 @@ target_include_directories(_core PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(_core PRIVATE rmath)
 
+# pybind11 hides C++ symbols only; hide C ones too, so a process that also
+# loads R (e.g., via reticulate) can't interpose its own unif_rand etc.
+set_target_properties(rmath _core PROPERTIES
+  C_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON)
+
 install(TARGETS _core LIBRARY DESTINATION castorbind)
