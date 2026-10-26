@@ -78,7 +78,6 @@ endif()
 pybind11_add_module(_core MODULE NO_EXTRAS
   ${CORE_CPP}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/castorbind.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/r_rng.c
   ${CASTOR_SOURCES})
 target_include_directories(_core PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src/shim

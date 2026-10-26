@@ -24,7 +24,8 @@ def test_rng_state_round_trip():
 
 
 @pytest.mark.parametrize(
-    "seed, error", [(-(2**31), ValueError), (2**31, TypeError)]
+    "seed, error",
+    [(-(2**31), ValueError), (2**31, ValueError), (1.0, TypeError)],
 )
 def test_set_seed_out_of_range(seed, error):
     with pytest.raises(error):

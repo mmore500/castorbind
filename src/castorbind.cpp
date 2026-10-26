@@ -2,24 +2,44 @@
 
 #include <algorithm>
 #include <chrono>
-#include <climits>
+#include <cstdint>
 #include <cmath>
 #include <complex>
-#include <random>
 #include <variant>
 
 #include <pybind11/complex.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 
-#include "r_rng.h"
-
 // R's standalone math library (vendor/r-source/src/nmath)
 extern "C" {
-double unif_rand(void);
 double norm_rand(void);
 double exp_rand(void);
 double rbinom(double n, double p);
+}
+
+// numpy's C interface to its bit generators (numpy/random/bitgen.h)
+struct bitgen_t {
+  void *state;
+  uint64_t (*next_uint64)(void *st);
+  uint32_t (*next_uint32)(void *st);
+  double (*next_double)(void *st);
+  uint64_t (*next_raw)(void *st);
+};
+
+namespace {
+bitgen_t *mt19937 = nullptr; // set by init_module
+} // namespace
+
+// R's unif_rand() for Mersenne-Twister (src/main/RNG.c), on numpy's
+// MT19937, which is the same generator; nmath draws everything through it
+extern "C" double unif_rand(void) {
+  constexpr double i2_32m1 = 2.328306437080797e-10; // 1/(2^32 - 1)
+  const double x = mt19937->next_uint32(mt19937->state) * 2.3283064365386963e-10;
+  // as R's fixup(): never return 0 or 1
+  if (x <= 0.0) return 0.5 * i2_32m1;
+  if (1.0 - x <= 0.0) return 1.0 - 0.5 * i2_32m1;
+  return x;
 }
 
 // casters for the shim's own result types; with pybind11/stl.h, these let
@@ -281,52 +301,25 @@ void init_module(py::module_ &m) {
                      .attr("ident")
                      .cast<unsigned long>();
 
-  // R seeds from the clock on first use; use the OS instead
-  castorbind_set_seed(int(std::random_device{}()));
+  // R's RNG state, as numpy's MT19937 (seeded from the OS, where R would
+  // use the clock); castorbind/_rng.py implements set.seed() etc. on it
+  py::object bit_generator =
+      py::module_::import("numpy.random").attr("MT19937")();
+  m.attr("_bit_generator") = bit_generator;
+  mt19937 = static_cast<bitgen_t *>(
+      bit_generator.attr("capsule").cast<py::capsule>().get_pointer());
 
   m.def(
-      "set_seed",
-      [](int seed) {
-        if (seed == INT_MIN)
-          throw py::value_error("seed -2**31 is R's NA, not a valid seed");
-        _locked([=] { castorbind_set_seed(seed); });
-      },
-      py::arg("seed").noconvert(),  // no floats etc.
-      "Seed R's Mersenne-Twister RNG, giving the same stream as "
-      "set.seed(seed) in R.");
-
-  m.def(
-      "get_rng_state",
-      [] {
-        return _locked([] {
-          std::vector<int> state(CASTORBIND_RNG_STATE_LEN);
-          castorbind_get_rng_state(state.data());
-          return state;
-        });
-      },
-      "Return the RNG state as 625 ints, laid out like .Random.seed[-1] "
-      "in R.");
-
-  m.def(
-      "set_rng_state",
-      [](const std::vector<long long> &values) {
-        if (values.size() != CASTORBIND_RNG_STATE_LEN)
-          throw py::value_error("state must have 625 entries");
-        // state[0] is mti, the position in the Mersenne-Twister state
-        if (values[0] < 0 || values[0] > CASTORBIND_RNG_STATE_LEN)
-          throw py::value_error("state[0] must be in [0, 625]");
-        std::vector<int> state;
-        for (long long x : values) {
-          if (x < INT_MIN || x > UINT_MAX)
-            throw py::value_error("state entries must fit in 32 bits");
-          state.push_back(int(static_cast<unsigned int>(x)));
+      "_with_castor_lock",
+      [](py::function f) {
+        std::unique_lock<std::mutex> lock(castor_mutex(), std::defer_lock);
+        {
+          py::gil_scoped_release release;
+          lock.lock();
         }
-        if (_locked([&] { return castorbind_set_rng_state(state.data()); }))
-          throw py::value_error("invalid RNG state: all zero");
+        return f();
       },
-      py::arg("state").noconvert(),
-      "Restore an RNG state returned by get_rng_state(), or taken from "
-      ".Random.seed[-1] in R.");
+      "Call f() while no castor function is running.");
 
   // R-identical draws, for testing the RNG against R itself
   m.def(
