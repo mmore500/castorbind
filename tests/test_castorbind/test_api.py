@@ -46,6 +46,7 @@ def test_rng_functions_exported():
 def test_top_level_namespace():
     assert castorbind.__all__ == ["castor_version", "legacy"]
     assert not any(name.startswith("_") for name in legacy.__all__)
+    assert not hasattr(legacy, "castor_version")
 
 
 def test_default_arguments():
