@@ -90,30 +90,11 @@ def test_integer_vector_rejects_bad_floats(bad):
         cb.get_distances_from_root(**dict(TREE, tree_edge=tree_edge))
 
 
-def test_integer_matrix_rejects_non_integral():
-    with pytest.raises(TypeError, match="A"):
-        cb.find_non_zeros_int(1, 2, np.array([[0.5, 1.9]]))
-    result = cb.find_non_zeros_int(1, 2, np.array([[0.0, 2.0]]))
-    np.testing.assert_equal(
-        result, {"rows": [0], "columns": [1], "values": [2]}
-    )
-
-
 def test_list_argument_rejects_str():
     with pytest.raises(TypeError, match="dense_rows"):
         cb.dense_binary_matrix_row2column_major(
             NR=1, NC=2, dense_rows="ab", Rindexing=False
         )
-
-
-def test_list_of_dicts():
-    # list elements that are dicts become R lists; castor's helper doesn't
-    # take such input, so just check it reaches castor's own error path
-    with pytest.raises(Exception) as e:
-        cb.dense_binary_matrix_row2column_major(
-            NR=2, NC=2, dense_rows=[{"a": 1}, {"b": 2}], Rindexing=False
-        )
-    assert "cannot convert" not in str(e.value)
 
 
 @pytest.mark.parametrize("mti", [-5, 626, 2**31])
@@ -125,8 +106,6 @@ def test_set_rng_state_rejects_bad_position(mti):
 
 
 def test_matrix_result_layout():
-    result = cb.find_non_zeros_float(2, 3, np.arange(6.0).reshape(2, 3))
-    np.testing.assert_equal(result["values"], [1.0, 2.0, 3.0, 4.0, 5.0])
     distances = distance_matrix(focal_clades=[0, 1, 2, 3])
     assert distances.flags.c_contiguous
     assert distances[0, 3] == 2.0 and distances[3, 0] == 2.0
@@ -149,41 +128,6 @@ def test_string_list_rejects_non_lists(labels):
         cb.tree_to_Newick_string(**dict(kwargs, node_labels=labels))
 
 
-def test_list_of_numpy_arrays():
-    # each array is one row, as with nested python lists
-    expected = cb.dense_binary_matrix_row2column_major(
-        NR=2, NC=4, dense_rows=[[0, 2], [1, 3]], Rindexing=False
-    )
-    actual = cb.dense_binary_matrix_row2column_major(
-        NR=2,
-        NC=4,
-        dense_rows=[np.array([0, 2]), np.array([1, 3])],
-        Rindexing=False,
-    )
-    np.testing.assert_equal(actual, expected)
-    assert cb.dense_binary_matrix_row2column_major(
-        NR=2,
-        NC=4,
-        dense_rows=[np.array([0, 2]), np.array([1])],
-        Rindexing=False,
-    )
-
-
-@pytest.mark.parametrize("row", [[1, None], [1, "a"], {1, 2}])
-def test_list_rejects_non_numbers(row):
-    with pytest.raises(TypeError, match="list elements must be"):
-        cb.dense_binary_matrix_row2column_major(
-            NR=1, NC=2, dense_rows=[row], Rindexing=False
-        )
-
-
-def test_list_rejects_complex():
-    with pytest.raises(NotImplementedError, match="complex"):
-        cb.dense_binary_matrix_row2column_major(
-            NR=1, NC=2, dense_rows=[[1j]], Rindexing=False
-        )
-
-
 def test_missing_list_name_is_key_error():
     functor = cb.SBM_get_SBM_PD_functor(max_error=1e-3, max_Legendre_terms=100)
     del functor["approx_max_tD"]
@@ -201,11 +145,79 @@ def test_missing_list_name_is_key_error():
         )
 
 
-def test_nested_numpy_arrays_not_flattened():
-    # a row that is itself a list of arrays is a list, as with python lists,
-    # so castor rejects it instead of seeing one flattened row
-    for row in [[[0, 2], [1, 3]], [np.array([0, 2]), np.array([1, 3])]]:
-        with pytest.raises(ValueError, match="numeric"):
-            cb.dense_binary_matrix_row2column_major(
-                NR=1, NC=4, dense_rows=[row], Rindexing=False
-            )
+def test_matrix_arguments_not_supported():
+    # only find_non_zeros_float/int take matrices; use np.nonzero instead
+    with pytest.raises(NotImplementedError, match="matrix"):
+        cb.find_non_zeros_float(2, 2, np.eye(2))
+
+
+@pytest.mark.parametrize("rows", [[[0, 2], [1]], ([0, 1],)])
+def test_list_arguments_not_supported(rows):
+    with pytest.raises(NotImplementedError, match="list arguments"):
+        cb.dense_binary_matrix_row2column_major(
+            NR=len(rows), NC=4, dense_rows=rows, Rindexing=False
+        )
+
+
+def sbm_functor():
+    return cb.SBM_get_SBM_PD_functor(max_error=1e-3, max_Legendre_terms=100)
+
+
+def tsbm_ll(functor):
+    return cb.TSBM_LL_of_transitions(
+        radius=1.0,
+        MRCA_times=[0.0],
+        child_times1=[1.0],
+        child_times2=[1.0],
+        distances=[0.1],
+        time_grid=[0.0, 1.0],
+        diffusivities=[1.0, 1.0],
+        splines_degree=1,
+        SBM_PD_functor=functor,
+    )
+
+
+def test_dict_argument_round_trip():
+    # castor's own dict results, nested dicts included, go back in
+    assert tsbm_ll(sbm_functor())["success"]
+
+
+@pytest.mark.parametrize("value", ["a", [1, None], {1, 2}])
+def test_dict_values_must_be_numeric(value):
+    functor = sbm_functor()
+    functor["approx_max_tD"] = value
+    with pytest.raises(TypeError, match="dict values must be"):
+        tsbm_ll(functor)
+
+
+@pytest.mark.parametrize("value", [[[1, 2], [3]], [np.array([1.0]), [2.0]]])
+def test_dict_values_nested_lists_not_supported(value):
+    functor = sbm_functor()
+    functor["approx_max_tD"] = value
+    with pytest.raises(NotImplementedError, match="lists of lists"):
+        tsbm_ll(functor)
+
+
+def test_complex_arguments_not_supported():
+    kwargs = dict(
+        TREE,
+        Nstates=2,
+        transition_matrix=[-0.3, 0.3, 0.1, -0.1],
+        eigenvalues=[],
+        EVmatrix=[],
+        inverse_EVmatrix=[],
+        prior_probabilities_per_tip=[1, 0, 0, 1, 0.5, 0.5],
+        root_prior_type="likelihoods",
+        root_prior=[],
+        include_ancestral_likelihoods=False,
+        reroot=True,
+        runtime_out_seconds=0.0,
+        exponentiation_accuracy=1e-4,
+        max_polynomials=1000,
+        store_exponentials=True,
+    )
+    assert cb.ASR_with_fixed_rates_Markov_model(**kwargs)["success"]
+    with pytest.raises(NotImplementedError, match="eigenvalues"):
+        cb.ASR_with_fixed_rates_Markov_model(
+            **dict(kwargs, eigenvalues=[0.0, -0.4])
+        )

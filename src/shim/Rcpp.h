@@ -197,14 +197,11 @@ class List {
 public:
   List() = default;
   List(const RObject &x);
-  // Rcpp's implicit List(size); castor relies on it in `return NAN_D;`,
-  // which R rejects as an invalid length
+  // Rcpp's implicit List(size); castor only reaches it in error paths
+  // (`return NAN_D;`), which R rejects as an invalid length
   template <class T, class = std::enable_if_t<std::is_arithmetic_v<T>>>
-  List(const T &size) {
-    if (!(size >= 0))
-      throw std::invalid_argument("castorbind: invalid list length");
-    values_.resize(std::size_t(size));
-    names_.resize(std::size_t(size));
+  List(const T &) {
+    throw std::invalid_argument("castorbind: invalid list length");
   }
 
   template <class... Args> static List create(const Args &...args) {

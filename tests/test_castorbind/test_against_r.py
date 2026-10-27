@@ -115,13 +115,26 @@ def test_simulate_markov_model(r):
     )
 
 
-def test_list_argument(r):
-    # a ragged list of int vectors, passed as an R list
+@pytest.mark.parametrize("include_ancestral_likelihoods", [False, True])
+def test_mk_ancestral_states(r, include_ancestral_likelihoods):
+    # without a precomputed eigendecomposition, as castor's R code allows
     check(
         r,
-        "dense_binary_matrix_row2column_major",
-        NR=3,
-        NC=4,
-        dense_rows=[[0, 2], [1], [0, 1, 3]],
-        Rindexing=False,
+        "ASR_with_fixed_rates_Markov_model",
+        ignore=("runtime",),
+        **TREE,
+        Nstates=2,
+        transition_matrix=[-0.3, 0.3, 0.1, -0.1],
+        eigenvalues=[],
+        EVmatrix=[],
+        inverse_EVmatrix=[],
+        prior_probabilities_per_tip=[1, 0, 0, 1, 1, 0, 0.5, 0.5, 0, 1],
+        root_prior_type="likelihoods",
+        root_prior=[],
+        include_ancestral_likelihoods=include_ancestral_likelihoods,
+        reroot=True,
+        runtime_out_seconds=0.0,
+        exponentiation_accuracy=1e-4,
+        max_polynomials=1000,
+        store_exponentials=True,
     )

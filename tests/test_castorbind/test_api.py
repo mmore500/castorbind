@@ -51,15 +51,19 @@ def test_top_level_namespace():
 
 
 def test_default_arguments():
-    result = legacy.find_non_zeros_float(2, 2, [[0.0, 1.0], [0.0, 0.0]])
+    tree = {
+        "Ntips": 3,
+        "Nnodes": 2,
+        "Nedges": 4,
+        "tree_edge": [3, 0, 3, 4, 4, 1, 4, 2],
+        "edge_length": [2.0, 1.0, 1.0, 1.0],
+    }
+    # castor's R defaults: root_edge = 0, symmetric_arcs = TRUE, opening = 0
     np.testing.assert_equal(
-        result, {"rows": [0], "columns": [1], "values": [1.0]}
-    )
-    result = legacy.find_non_zeros_float(
-        2, 2, [[0.0, 1.0], [0.0, 0.0]], transpose=True
-    )
-    np.testing.assert_equal(
-        result, {"rows": [1], "columns": [0], "values": [1.0]}
+        legacy.get_radial_tree_geometry(**tree),
+        legacy.get_radial_tree_geometry(
+            **tree, root_edge=0.0, symmetric_arcs=True, opening=0.0
+        ),
     )
 
 

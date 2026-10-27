@@ -4,10 +4,8 @@
 #include <chrono>
 #include <cstdint>
 #include <cmath>
-#include <complex>
 #include <variant>
 
-#include <pybind11/complex.h>
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 
@@ -133,34 +131,34 @@ py::object _to_py(const Value &v) {
       v);
 }
 
-Rcpp::List _list_from_py(py::handle h) {
+[[noreturn]] void _not_implemented(const std::string &what) {
+  PyErr_SetString(PyExc_NotImplementedError,
+                  ("castorbind: " + what + " are not supported").c_str());
+  throw py::error_already_set();
+}
+
+Rcpp::List _list_from_py(const py::dict &d) {
   Rcpp::List result;
-  if (py::isinstance<py::dict>(h)) {
-    for (auto item : py::reinterpret_borrow<py::dict>(h))
-      result.push_back(Rcpp::RObject(_value_from_py(item.second)),
-                       py::str(item.first).cast<std::string>());
-  } else {
-    for (auto item : py::reinterpret_borrow<py::sequence>(h))
-      result.push_back(Rcpp::RObject(_value_from_py(item)));
-  }
+  for (auto item : d)
+    result.push_back(Rcpp::RObject(_value_from_py(item.second)),
+                     py::str(item.first).cast<std::string>());
   return result;
 }
 
-// a list element -> what R would have passed for it. castor's list
-// arguments hold numbers, numeric vectors and nested lists, so nothing else
-// (e.g., strings or complex numbers) is supported
+// a dict value -> what R would have passed for it. castor's list arguments
+// are dicts castor itself returned, holding numbers, numeric vectors and
+// nested dicts, so nothing else is supported
 Value _value_from_py(py::handle h) {
   if (h.is_none()) return std::monostate{};
   if (py::isinstance<py::dict>(h))
-    return std::make_shared<const Rcpp::List>(_list_from_py(h));
-  if (py::isinstance<py::list>(h) || py::isinstance<py::tuple>(h)) {
-    // any non-scalar item (list, dict, numpy array, ...) makes this a list
+    return std::make_shared<const Rcpp::List>(
+        _list_from_py(py::reinterpret_borrow<py::dict>(h)));
+  if (py::isinstance<py::list>(h) || py::isinstance<py::tuple>(h))
     for (auto item : py::reinterpret_borrow<py::sequence>(h))
       if (py::isinstance<py::dict>(item) ||
           (py::isinstance<py::sequence>(item) && !py::isinstance<py::str>(item)))
-        return std::make_shared<const Rcpp::List>(_list_from_py(h));
-  }
-  constexpr const char *name = "list element";
+        _not_implemented("lists of lists, dicts or arrays in arguments");
+  constexpr const char *name = "dict value";
   py::array a = _as_array(h, name);
   const bool scalar = a.ndim() == 0;
   switch (a.dtype().kind()) {
@@ -174,38 +172,12 @@ Value _value_from_py(py::handle h) {
   case 'f':
     if (scalar) return h.cast<double>();
     return _array_to_vector<double>(a, name);
-  case 'c':
-    PyErr_SetString(PyExc_NotImplementedError,
-                    "castorbind: complex numbers in list arguments are not "
-                    "supported");
-    throw py::error_already_set();
   default:
     throw py::type_error("castorbind: cannot pass " +
                          std::string(py::repr(h)).substr(0, 80) +
-                         " to castor; list elements must be numbers, numeric "
-                         "arrays, or nested lists or dicts");
+                         " to castor; dict values must be numbers, numeric "
+                         "arrays or dicts");
   }
-}
-
-template <class T>
-using _matrix_for = Rcpp::Matrix<std::is_same_v<T, double>
-                                     ? Rcpp::castorbind_detail::REALSXP
-                                     : Rcpp::castorbind_detail::INTSXP>;
-
-template <class T>
-_matrix_for<T> _matrix_from_py(py::handle h, const char *name) {
-  if constexpr (std::is_integral_v<T>) _check_integral(_as_array(h, name), name);
-  auto a = py::array_t<T, py::array::c_style | py::array::forcecast>::ensure(h);
-  if (!a || a.ndim() != 2) {
-    PyErr_Clear();
-    _type_error(name, "a 2-D array");
-  }
-  const long nrow = long(a.shape(0)), ncol = long(a.shape(1));
-  _matrix_for<T> result(nrow, ncol);
-  auto view = a.template unchecked<2>();
-  for (long r = 0; r < nrow; ++r)
-    for (long c = 0; c < ncol; ++c) result(r, c) = view(r, c);
-  return result;
 }
 
 template <class F> std::vector<double> _draw(long n, F &&f) {
@@ -269,27 +241,30 @@ template <> Rcpp::LogicalVector from_py(py::handle h, const char *name) {
   return Rcpp::LogicalVector(_array_to_vector<bool>(h, name));
 }
 
+// only castor's optional eigendecompositions take these; empty means none
 template <> Rcpp::ComplexVector from_py(py::handle h, const char *name) {
-  std::vector<Rcomplex> result;
-  for (const auto &c : _array_to_vector<std::complex<double>>(h, name))
-    result.push_back(Rcomplex{c.real(), c.imag()});
-  return Rcpp::ComplexVector(result);
+  if (!h.is_none() && py::len(h) > 0)
+    _not_implemented(std::string("complex arguments ('") + name + "')");
+  return {};
 }
 
+// only find_non_zeros_float/int take matrices; use np.nonzero instead
 template <> Rcpp::NumericMatrix from_py(py::handle h, const char *name) {
-  return _matrix_from_py<double>(h, name);
+  _not_implemented(std::string("matrix arguments ('") + name + "')");
 }
 
 template <> Rcpp::IntegerMatrix from_py(py::handle h, const char *name) {
-  return _matrix_from_py<int>(h, name);
+  _not_implemented(std::string("matrix arguments ('") + name + "')");
 }
 
+// castor's list arguments are dicts it returned (e.g., SBM_PD_functor);
+// dense_binary_matrix_row2column_major's list of rows is not supported
 template <> Rcpp::List from_py(py::handle h, const char *name) {
   if (h.is_none()) return {};
-  if (!py::isinstance<py::dict>(h) && !py::isinstance<py::list>(h) &&
-      !py::isinstance<py::tuple>(h))
-    _type_error(name, "a dict, list or tuple");
-  return _list_from_py(h);
+  if (py::isinstance<py::list>(h) || py::isinstance<py::tuple>(h))
+    _not_implemented(std::string("list arguments ('") + name + "')");
+  if (!py::isinstance<py::dict>(h)) _type_error(name, "a dict");
+  return _list_from_py(py::reinterpret_borrow<py::dict>(h));
 }
 
 void init_module(py::module_ &m) {
